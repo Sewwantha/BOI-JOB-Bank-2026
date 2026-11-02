@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+
+# User-uploaded files
+wwwroot/uploads/*
+!wwwroot/uploads/.gitkeep
+
+# IDE
+.vs/
+*.user
+
+# Local secrets
+appsettings.Local.json

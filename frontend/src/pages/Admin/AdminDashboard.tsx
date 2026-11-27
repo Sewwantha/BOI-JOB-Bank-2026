@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, Briefcase, Trash2, Shield, Search,
   UserCheck,
+  UserX,
   FileCheck,
   Mail,
   Calendar,
@@ -39,6 +40,7 @@ interface SystemUser {
   email: string;
   role: 'Admin' | 'Employer' | 'JobSeeker';
   createdAt: string;
+  isActive: boolean;
   profileName: string;
   profileId: string | null;
 }
@@ -163,6 +165,37 @@ const AdminDashboard: React.FC = () => {
     } catch (err) {
       console.error('Error deleting user', err);
       alert('Failed to terminate user.');
+    }
+  };
+
+  // Deactivated users keep their records but cannot sign in; activating restores access
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const handleToggleUserStatus = async (user: SystemUser) => {
+    // Only an explicit false means inactive (matches the Active/Inactive badge and button label)
+    const activate = user.isActive === false;
+    const action = activate ? 'activate' : 'deactivate';
+    const detail = activate
+      ? 'They will be able to sign in again.'
+      : 'They will not be able to sign in, but all their records will be kept. You can activate them again at any time.';
+    if (!window.confirm(`Are you sure you want to ${action} "${user.email}"? ${detail}`)) {
+      return;
+    }
+
+    setStatusUpdatingId(user.id);
+    try {
+      await api.put(`/admin/user/${user.id}/status`, { isActive: activate });
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, isActive: activate } : u)));
+    } catch (err: unknown) {
+      console.error('Error updating user status', err);
+      const error = err as { response?: { status?: number; data?: { message?: string } } };
+      alert(
+        error.response?.data?.message ||
+        (error.response?.status === 404
+          ? `Failed to ${action} user: the server does not support this yet. Please restart the backend.`
+          : `Failed to ${action} user.`)
+      );
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
@@ -430,13 +463,14 @@ const AdminDashboard: React.FC = () => {
                         <th className="p-4">Profile Display Name</th>
                         <th className="p-4">System Role</th>
                         <th className="p-4">Registration Date</th>
+                        <th className="p-4">Status</th>
                         <th className="p-4 text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800 text-sm">
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="text-center py-12 text-slate-500">
+                          <td colSpan={6} className="text-center py-12 text-slate-500">
                             No users match the search terms.
                           </td>
                         </tr>
@@ -465,6 +499,13 @@ const AdminDashboard: React.FC = () => {
                               <Calendar className="h-4 w-4 text-slate-650" />
                               <span>{new Date(user.createdAt).toLocaleDateString()}</span>
                             </td>
+                            <td className="p-4">
+                              {user.isActive === false ? (
+                                <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-500/10 text-slate-400 border border-slate-500/30">Inactive</span>
+                              ) : (
+                                <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>
+                              )}
+                            </td>
                             <td className="p-4 text-center">
                               {user.email === 'admin@jobbank.com' ? (
                                 <span className="text-[10px] text-slate-650 font-bold uppercase tracking-wider">PROTECTED</span>
@@ -479,6 +520,21 @@ const AdminDashboard: React.FC = () => {
                                     <Pencil className="h-4 w-4" />
                                     <span className="text-xs font-bold px-1">Edit</span>
                                   </Link>
+                                )}
+                                {user.role !== 'Admin' && (
+                                  <button
+                                    onClick={() => handleToggleUserStatus(user)}
+                                    disabled={statusUpdatingId === user.id}
+                                    className={`p-2 rounded-lg transition-all cursor-pointer inline-flex items-center space-x-1 border disabled:opacity-50 ${
+                                      user.isActive === false
+                                        ? 'text-emerald-500 hover:text-emerald-400 bg-emerald-500/5 border-emerald-500/10 hover:border-emerald-500/30'
+                                        : 'text-amber-500 hover:text-amber-400 bg-amber-500/5 border-amber-500/10 hover:border-amber-500/30'
+                                    }`}
+                                    title={user.isActive === false ? 'Activate Account' : 'Deactivate Account (keeps records)'}
+                                  >
+                                    {user.isActive === false ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+                                    <span className="text-xs font-bold px-1">{user.isActive === false ? 'Activate' : 'Deactivate'}</span>
+                                  </button>
                                 )}
                                 <button
                                   onClick={() => handleDeleteUser(user.id, user.email)}

@@ -249,6 +249,7 @@ namespace JobBank.Api.Controllers
                     u.Email,
                     u.Role,
                     u.CreatedAt,
+                    u.IsActive,
                     ProfileName = u.Role == UserRole.Employer ? u.CompanyProfile!.CompanyName 
                                 : u.Role == UserRole.JobSeeker ? $"{u.JobSeekerProfile!.FirstName} {u.JobSeekerProfile.LastName}" 
                                 : "Administrator",
@@ -639,6 +640,36 @@ namespace JobBank.Api.Controllers
                 .ToList();
 
             return Ok(jobs);
+        }
+
+        public class UserStatusDto
+        {
+            public bool IsActive { get; set; }
+        }
+
+        // Activate / deactivate a user without deleting their records
+        [HttpPut("user/{id}/status")]
+        public IActionResult SetUserStatus(Guid id, [FromBody] UserStatusDto dto)
+        {
+            var user = _context.Users.FirstOrDefault(u => u.Id == id);
+            if (user == null)
+            {
+                return NotFound(new { Message = "User not found." });
+            }
+
+            if (user.Role == UserRole.Admin)
+            {
+                return BadRequest(new { Message = "Cannot change the status of an Admin user." });
+            }
+
+            user.IsActive = dto.IsActive;
+            _context.SaveChanges();
+
+            return Ok(new
+            {
+                Message = dto.IsActive ? "User activated successfully." : "User deactivated successfully.",
+                user.IsActive
+            });
         }
 
         [HttpDelete("user/{id}")]

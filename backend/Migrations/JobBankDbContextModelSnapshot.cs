@@ -329,6 +329,9 @@ namespace JobBank.Api.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
                     b.Property<string>("NicNumber")
                         .IsRequired()
                         .HasMaxLength(12)

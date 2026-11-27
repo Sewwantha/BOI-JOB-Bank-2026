@@ -61,6 +61,28 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ClockSkew = TimeSpan.Zero
     };
+
+    // A deactivated (or deleted) employer / job seeker is signed out on their next request,
+    // even if their token has not expired. Admin tokens use a UserCode, not a user id, so they are skipped.
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async ctx =>
+        {
+            var sub = ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                      ?? ctx.Principal?.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(sub, out var userId))
+            {
+                return;
+            }
+
+            var db = ctx.HttpContext.RequestServices.GetRequiredService<JobBankDbContext>();
+            var isActive = await db.Users.Where(u => u.Id == userId).Select(u => (bool?)u.IsActive).FirstOrDefaultAsync();
+            if (isActive != true)
+            {
+                ctx.Fail("This account is deactivated or no longer exists.");
+            }
+        }
+    };
 });
 
 // Configure CORS

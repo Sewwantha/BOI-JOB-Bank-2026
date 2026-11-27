@@ -182,6 +182,12 @@ namespace JobBank.Api.Controllers
                 return Unauthorized(new { Message = "Invalid credentials." });
             }
 
+            // Checked after the password so the message does not reveal which accounts exist
+            if (!user.IsActive)
+            {
+                return Unauthorized(new { Message = "Your account has been deactivated. Please contact the administrator." });
+            }
+
             var token = GenerateJwtToken(user);
 
             Guid? profileId = null;

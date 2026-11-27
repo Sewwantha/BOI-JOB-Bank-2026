@@ -335,6 +335,22 @@ namespace JobBank.Api.Controllers
                     return BadRequest(new { Message = "Company name is required." });
                 }
 
+                // Must be an official company name, so the vacancy zone can be found
+                OfficialCompany? official;
+                try
+                {
+                    official = _commonDb.FindCompany(dto.CompanyName);
+                }
+                catch (SqlException)
+                {
+                    return StatusCode(503, new { Message = "Cannot connect to the company database. Please try again later." });
+                }
+                if (official == null)
+                {
+                    return BadRequest(new { Message = "Please select the company from the official company list." });
+                }
+                dto.CompanyName = official.Name;
+
                 user.Email = dto.Email.Trim();
             }
 
@@ -706,6 +722,49 @@ namespace JobBank.Api.Controllers
                 j.CompanyId,
                 Zone = zones.TryGetValue((j.CompanyName ?? string.Empty).Trim(), out var zone) ? zone : string.Empty
             }));
+        }
+
+        public class LinkCompanyDto
+        {
+            public string CompanyName { get; set; } = string.Empty;
+        }
+
+        // Link an existing employer to its official company name (fixes names like "abc's Company"),
+        // so its vacancies show the zone. Admins may link a company that another account already uses.
+        [HttpPut("company/{profileId}/official")]
+        public IActionResult LinkOfficialCompany(Guid profileId, [FromBody] LinkCompanyDto dto)
+        {
+            var company = _context.CompanyProfiles.FirstOrDefault(c => c.Id == profileId);
+            if (company == null)
+            {
+                return NotFound(new { Message = "Company profile not found." });
+            }
+
+            OfficialCompany? official;
+            try
+            {
+                official = _commonDb.FindCompany(dto.CompanyName);
+            }
+            catch (SqlException)
+            {
+                return StatusCode(503, new { Message = "Cannot connect to the company database. Please try again later." });
+            }
+            if (official == null)
+            {
+                return BadRequest(new { Message = "Please select a company from the official company list." });
+            }
+
+            var previousName = company.CompanyName;
+            company.CompanyName = official.Name;
+            _context.SaveChanges();
+
+            return Ok(new
+            {
+                Message = $"Linked to {official.Name}.",
+                company.CompanyName,
+                PreviousName = previousName,
+                official.Zone
+            });
         }
 
         public class UserStatusDto

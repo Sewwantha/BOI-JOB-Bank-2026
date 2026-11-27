@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Building2, Globe, MapPin, AlignLeft, Link2, Save, ArrowLeft, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import CompanyPicker from '../../components/CompanyPicker';
 import api from '../../services/api';
 
 interface CompanyProfile {
@@ -64,7 +65,7 @@ const EmployerProfile: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyName.trim()) {
-      setMessage({ type: 'error', text: 'Company Name is required.' });
+      setMessage({ type: 'error', text: 'Please select your company from the official company list.' });
       return;
     }
 
@@ -155,17 +156,13 @@ const EmployerProfile: React.FC = () => {
                   <span>Company Name</span>
                   <span className="text-rose-500">*</span>
                 </label>
-                <div className="relative">
-                  <Building2 className="absolute left-3 top-3.5 h-5 w-5 text-slate-500" />
-                  <input
-                    type="text"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="e.g. Acme Corp"
-                    className="w-full bg-slate-900/60 border border-slate-800 rounded-xl py-3 pl-11 pr-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-all font-medium"
-                    required
-                  />
-                </div>
+                <CompanyPicker
+                  value={companyName}
+                  onChange={(c) => setCompanyName(c?.name ?? '')}
+                  showSelectedHint={false}
+                  required
+                />
+                <p className="mt-1 text-xs text-slate-500">To change it, search and select your company as registered with BOI.</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

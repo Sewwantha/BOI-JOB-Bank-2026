@@ -50,6 +50,7 @@ namespace JobBank.Api.Controllers
                 PasswordHash = PasswordHasher.Hash(dto.Password),
                 Role = dto.Role
             };
+            OfficialCompany? officialCompany = null;
 
             if (dto.Role == UserRole.JobSeeker)
             {
@@ -87,6 +88,29 @@ namespace JobBank.Api.Controllers
                     return BadRequest(new { Message = "User with this email already exists." });
                 }
 
+                // Employers pick their official company name, so the vacancy zone can be found
+                if (string.IsNullOrWhiteSpace(dto.CompanyName))
+                {
+                    return BadRequest(new { Message = "Please select your company." });
+                }
+                try
+                {
+                    officialCompany = _commonDb.FindCompany(dto.CompanyName);
+                }
+                catch (SqlException)
+                {
+                    return StatusCode(503, new { Message = "Cannot connect to the company database. Please try again later." });
+                }
+                if (officialCompany == null)
+                {
+                    return BadRequest(new { Message = "Please select your company from the official company list." });
+                }
+                var officialUpper = officialCompany.Name.ToUpper();
+                if (_context.CompanyProfiles.Any(c => c.CompanyName.Trim().ToUpper() == officialUpper))
+                {
+                    return BadRequest(new { Message = "An employer account for this company already exists. Please contact the BOI admin office." });
+                }
+
                 user.Email = dto.Email.Trim();
             }
 
@@ -101,7 +125,7 @@ namespace JobBank.Api.Controllers
                 var company = new CompanyProfile
                 {
                     UserId = user.Id,
-                    CompanyName = dto.Email.Split('@')[0] + "'s Company", // default name
+                    CompanyName = officialCompany!.Name, // official name from the company list
                     Description = "Update company description here.",
                     Website = "",
                     Location = "",

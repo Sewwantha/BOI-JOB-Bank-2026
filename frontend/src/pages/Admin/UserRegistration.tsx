@@ -4,6 +4,7 @@ import {
   User, Building, IdCard, Mail, Lock, Phone, MapPin, Globe,
   GraduationCap, UserPlus, CheckCircle, AlertTriangle, Briefcase, DollarSign
 } from 'lucide-react';
+import CompanyPicker from '../../components/CompanyPicker';
 import api from '../../services/api';
 import { sanitizeFullName, isValidFullName, FULL_NAME_ERROR } from '../../utils/nameValidation';
 import { isValidDob, getMinDob, getMaxDob, DOB_ERROR } from '../../utils/dobValidation';
@@ -224,7 +225,7 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
       if (seeker.landlineNumber.trim() && !isValidPhone(seeker.landlineNumber)) return LANDLINE_ERROR;
     } else {
       if (!employer.email.trim()) return 'Email is required.';
-      if (!employer.companyName.trim()) return 'Company name is required.';
+      if (!employer.companyName.trim()) return 'Please select the company from the official company list.';
     }
     if (password.length < 6) return 'Password must be at least 6 characters.';
     if (password !== confirmPassword) return 'Passwords do not match.';
@@ -575,12 +576,9 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
               </div>
               <div>
                 <label className={labelClass}>Company Name <Required /></label>
-                <input
-                  type="text"
+                <CompanyPicker
                   value={employer.companyName}
-                  onChange={(e) => updateEmployer('companyName', e.target.value)}
-                  className={inputClass}
-                  placeholder="Company (Pvt) Ltd"
+                  onChange={(c) => updateEmployer('companyName', c?.name ?? '')}
                 />
               </div>
               <div>

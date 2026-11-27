@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth, type UserSession } from '../context/AuthContext';
 import { Lock, Mail, User, Building, AlertTriangle, ArrowRight, IdCard } from 'lucide-react';
+import CompanyPicker from '../components/CompanyPicker';
 import api from '../services/api';
 import { sanitizeNic, isValidNic, NIC_MAX_LENGTH, NIC_ERROR } from '../utils/nicValidation';
 import RegistrationSuccessModal from '../components/RegistrationSuccessModal';
@@ -20,6 +21,8 @@ const Register: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<'JobSeeker' | 'Employer'>('JobSeeker');
+  // Employers choose their official company name (BOI common database)
+  const [companyName, setCompanyName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Held until the seeker closes the reference number popup, then used to log in
@@ -57,6 +60,11 @@ const Register: React.FC = () => {
       return;
     }
 
+    if (role === 'Employer' && !companyName) {
+      setError('Please select your company from the list.');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
       return;
@@ -71,6 +79,7 @@ const Register: React.FC = () => {
         nicNumber: role === 'JobSeeker' ? email : '',
         password,
         role: role === 'JobSeeker' ? 2 : 1, // Enums: Admin=0, Employer=1, JobSeeker=2
+        companyName: role === 'Employer' ? companyName : '',
       });
 
       const data: RegisterResponse = res.data;
@@ -192,6 +201,16 @@ const Register: React.FC = () => {
                     placeholder="name@example.com"
                   />
                 </div>
+              </div>
+            )}
+
+            {role === 'Employer' && (
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">
+                  Company Name <span className="text-rose-500 font-bold">*</span>
+                </label>
+                <CompanyPicker value={companyName} onChange={(c) => setCompanyName(c?.name ?? '')} required />
+                <p className="mt-1 text-xs text-slate-500">Search for your company as registered with BOI</p>
               </div>
             )}
 

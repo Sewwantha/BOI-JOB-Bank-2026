@@ -17,6 +17,7 @@ import {
   UsersRound,
   ClipboardList,
   RefreshCw,
+  Link2
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
@@ -24,6 +25,7 @@ import UserRegistration from './UserRegistration';
 import CandidatePool, { type PoolCandidate } from './CandidatePool';
 import WeeklyMatching from './WeeklyMatching';
 import RegistrationSuccessModal from '../../components/RegistrationSuccessModal';
+import CompanyPicker, { type OfficialCompany } from '../../components/CompanyPicker';
 import { type ApplicationStatus, statusBadgeClass, statusLabel } from '../../constants/applicationStatus';
 
 interface Stats {
@@ -201,6 +203,38 @@ const AdminDashboard: React.FC = () => {
       );
     } finally {
       setStatusUpdatingId(null);
+    }
+  };
+
+  // Link an employer to its official company name so its vacancies show the zone
+  const [linkingUser, setLinkingUser] = useState<SystemUser | null>(null);
+  const [linkCompany, setLinkCompany] = useState<OfficialCompany | null>(null);
+  const [linkSaving, setLinkSaving] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  const openLinkCompany = (user: SystemUser) => {
+    setLinkingUser(user);
+    setLinkCompany(null);
+    setLinkError(null);
+  };
+
+  const saveLinkCompany = async () => {
+    if (!linkingUser?.profileId || !linkCompany) return;
+    setLinkSaving(true);
+    setLinkError(null);
+    try {
+      const res = await api.put(`/admin/company/${linkingUser.profileId}/official`, { companyName: linkCompany.name });
+      const newName: string = res.data.companyName;
+      setUsers((prev) => prev.map((u) => (u.id === linkingUser.id ? { ...u, profileName: newName } : u)));
+      // Vacancies carry the company name and zone, so reload them
+      const jobsRes = await api.get('/admin/jobs');
+      setJobs(jobsRes.data);
+      setLinkingUser(null);
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } };
+      setLinkError(error.response?.data?.message || 'Failed to link the company.');
+    } finally {
+      setLinkSaving(false);
     }
   };
 
@@ -550,6 +584,16 @@ const AdminDashboard: React.FC = () => {
                                     <Pencil className="h-4 w-4" />
                                     <span className="text-xs font-bold px-1">Edit</span>
                                   </Link>
+                                )}
+                                {user.role === 'Employer' && user.profileId && (
+                                  <button
+                                    onClick={() => openLinkCompany(user)}
+                                    className="p-2 text-sky-400 hover:text-sky-300 bg-sky-500/5 border border-sky-500/10 hover:border-sky-500/30 rounded-lg transition-all cursor-pointer inline-flex items-center space-x-1 whitespace-nowrap"
+                                    title="Link this employer to its official company (BOI common database)"
+                                  >
+                                    <Link2 className="h-4 w-4" />
+                                    <span className="text-xs font-bold px-1">Link Company</span>
+                                  </button>
                                 )}
                                 {user.role !== 'Admin' && (
                                   <button
@@ -948,6 +992,44 @@ const AdminDashboard: React.FC = () => {
           {activeTab === 'register' && (
             <UserRegistration onRegistered={refreshUsersAndStats} />
           )}
+        </div>
+      )}
+
+      {linkingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="max-w-lg w-full glass p-8 rounded-3xl border border-slate-800 shadow-2xl">
+            <h3 className="text-xl font-extrabold text-slate-100 mb-1">Link Official Company</h3>
+            <p className="text-sm text-slate-400 mb-5">
+              Employer <span className="text-slate-200 font-semibold">{linkingUser.email}</span>
+              <br />
+              Current company name: <span className="text-slate-200 font-semibold">{linkingUser.profileName || '—'}</span>
+            </p>
+            <label className="text-xs font-semibold text-slate-400 block mb-1">Official company</label>
+            <CompanyPicker value={linkCompany?.name ?? ''} onChange={setLinkCompany} />
+            {linkCompany && (
+              <p className="mt-2 text-xs text-slate-400">
+                Zone: <span className="text-sky-300 font-semibold">{linkCompany.zone || 'No zone recorded'}</span>
+              </p>
+            )}
+            {linkError && <p className="mt-3 text-sm text-rose-400">{linkError}</p>}
+            <div className="flex space-x-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setLinkingUser(null)}
+                className="w-1/2 py-3 border border-slate-700 hover:bg-slate-800 rounded-xl text-sm font-bold text-slate-300 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveLinkCompany}
+                disabled={!linkCompany || linkSaving}
+                className="w-1/2 py-3 font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl disabled:opacity-50 cursor-pointer"
+              >
+                {linkSaving ? 'Saving...' : 'Link Company'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using JobBank.Api.Data;
+using JobBank.Api.Helpers;
 using JobBank.Api.DTOs.JobSeeker;
 using JobBank.Api.Models;
 
@@ -53,6 +54,8 @@ namespace JobBank.Api.Controllers
                 Id = seeker.Id,
                 UserId = seeker.UserId,
                 RefNo = seeker.RefNo,
+                RefNoValid = RefNoGenerator.IsValidToday(seeker.RefNo),
+                RefNoIssuedOn = RefNoGenerator.IssuedOn(seeker.RefNo),
                 FirstName = seeker.FirstName,
                 LastName = seeker.LastName,
                 DateOfBirth = seeker.DateOfBirth,

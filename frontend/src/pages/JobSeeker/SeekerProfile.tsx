@@ -19,6 +19,7 @@ interface JobSeekerProfile {
   id?: string;
   registeredAt?: string;
   refNo?: string;
+  refNoValid?: boolean;
   firstName?: string;
   lastName?: string;
   dateOfBirth?: string;
@@ -48,6 +49,7 @@ const SeekerProfile: React.FC = () => {
   // Reference & Cache
   const [profileId, setProfileId] = useState<string>('');
   const [refNo, setRefNo] = useState<string>('');
+  const [refNoValid, setRefNoValid] = useState<boolean>(true);
   const [cachedProfile, setCachedProfile] = useState<JobSeekerProfile | null>(null);
 
   // Form states
@@ -145,6 +147,7 @@ const SeekerProfile: React.FC = () => {
 
           setProfileId(profile.id || '');
           setRefNo(profile.refNo || '');
+          setRefNoValid(profile.refNoValid !== false);
           setFullName(parseFullName(profile.firstName, profile.lastName));
 
           // Format Date of Birth if it is ISO date
@@ -394,7 +397,17 @@ const SeekerProfile: React.FC = () => {
           {profileId && refNo && (
             <div className="inline-block mt-4 px-4 py-1.5 bg-purple-950/40 border border-purple-500/25 text-purple-400 text-sm font-mono rounded-full tracking-wider shadow-inner">
               REF NO: {refNo}
+              <span className={`ml-2 text-[10px] font-sans font-bold uppercase ${refNoValid ? 'text-emerald-400' : 'text-slate-400'}`}>
+                {refNoValid ? '· Valid today' : '· Expired'}
+              </span>
             </div>
+          )}
+          {profileId && refNo && !refNoValid && (
+            <p className="text-xs text-slate-500 mt-2">
+              {isAdminMode
+                ? 'This reference number was issued on an earlier day. Use "Re-issue Ref No" in the Job Seekers list for today’s visit.'
+                : 'Reference numbers are valid only on the day they are issued. Please ask the admin office for a new one on your next visit.'}
+            </p>
           )}
           {isAdminMode && resumeUrl && !resumeUrl.includes('example.com') && (
             <div className="mt-4">

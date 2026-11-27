@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using JobBank.Api.Data;
 
@@ -24,5 +25,20 @@ namespace JobBank.Api.Helpers
 
             return refNo;
         }
+
+        // The issue date is the yyyyMMdd part of the reference number; null if it cannot be read.
+        public static DateTime? IssuedOn(string? refNo)
+        {
+            var parts = (refNo ?? string.Empty).Split('-');
+            if (parts.Length >= 2
+                && DateTime.TryParseExact(parts[1], "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            {
+                return date;
+            }
+            return null;
+        }
+
+        // A reference number is valid only on the day it was issued (server's local date).
+        public static bool IsValidToday(string? refNo) => IssuedOn(refNo) == DateTime.Now.Date;
     }
 }

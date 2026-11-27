@@ -8,6 +8,8 @@ namespace JobBank.Api.DTOs.JobSeeker
         public Guid UserId { get; set; }
         public DateTime RegisteredAt { get; set; }
         public string RefNo { get; set; } = string.Empty;
+        public bool RefNoValid { get; set; }          // valid only on its day of issue
+        public DateTime? RefNoIssuedOn { get; set; }
 
         // Personal Information
         public string FirstName { get; set; } = string.Empty;

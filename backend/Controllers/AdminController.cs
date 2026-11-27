@@ -426,6 +426,9 @@ namespace JobBank.Api.Controllers
                     s.Id,
                     s.UserId,
                     s.RefNo,
+                    // Evaluated in memory after the query (top-level projection)
+                    RefNoIssuedOn = RefNoGenerator.IssuedOn(s.RefNo),
+                    RefNoValid = RefNoGenerator.IsValidToday(s.RefNo),
                     s.FirstName,
                     s.LastName,
                     s.NicNumber,
@@ -442,6 +445,42 @@ namespace JobBank.Api.Controllers
                 .ToList();
 
             return Ok(seekers);
+        }
+
+        // Re-issue a reference number for a returning job seeker. A reference number is valid only on
+        // its day of issue, so on a later visit the admin gives the same seeker a new one dated today.
+        [HttpPost("jobseeker/{id}/reissue-refno")]
+        public IActionResult ReissueRefNo(Guid id)
+        {
+            var seeker = _context.JobSeekerProfiles.FirstOrDefault(s => s.Id == id);
+            if (seeker == null)
+            {
+                return NotFound(new { Message = "Job seeker profile not found." });
+            }
+
+            // A hired candidate (employer Accepted them) does not get a new reference number
+            if (_context.JobApplications.Any(a => a.JobSeekerProfileId == seeker.Id && a.Status == ApplicationStatus.Accepted))
+            {
+                return BadRequest(new { Message = "This job seeker has already been hired, so a new reference number cannot be issued." });
+            }
+
+            if (RefNoGenerator.IsValidToday(seeker.RefNo))
+            {
+                return BadRequest(new { Message = $"Reference number {seeker.RefNo} was issued today and is still valid.", seeker.RefNo });
+            }
+
+            var previousRefNo = seeker.RefNo;
+            seeker.RefNo = RefNoGenerator.Generate(_context, seeker.NicNumber);
+            _context.SaveChanges();
+
+            return Ok(new
+            {
+                Message = "New reference number issued.",
+                seeker.RefNo,
+                PreviousRefNo = previousRefNo,
+                RefNoIssuedOn = RefNoGenerator.IssuedOn(seeker.RefNo),
+                RefNoValid = true
+            });
         }
 
         // Candidate pool: every job seeker not yet accepted by a company. Covers candidates never

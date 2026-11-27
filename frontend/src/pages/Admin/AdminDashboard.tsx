@@ -16,12 +16,14 @@ import {
   Building2,
   UsersRound,
   ClipboardList,
+  RefreshCw,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import UserRegistration from './UserRegistration';
 import CandidatePool, { type PoolCandidate } from './CandidatePool';
 import WeeklyMatching from './WeeklyMatching';
+import RegistrationSuccessModal from '../../components/RegistrationSuccessModal';
 import { type ApplicationStatus, statusBadgeClass, statusLabel } from '../../constants/applicationStatus';
 
 interface Stats {
@@ -65,6 +67,8 @@ interface SystemJobSeeker {
   id: string;
   userId: string;
   refNo: string;
+  refNoValid?: boolean;        // a reference number is valid only on its day of issue
+  refNoIssuedOn?: string | null;
   firstName: string;
   lastName: string;
   nicNumber: string;
@@ -196,6 +200,31 @@ const AdminDashboard: React.FC = () => {
       );
     } finally {
       setStatusUpdatingId(null);
+    }
+  };
+
+  // Re-issue a reference number for a returning job seeker (old one expired after its day of issue)
+  const [reissuingId, setReissuingId] = useState<string | null>(null);
+  const [reissuedRefNo, setReissuedRefNo] = useState<string | null>(null);
+  const handleReissueRefNo = async (seeker: SystemJobSeeker) => {
+    const name = `${seeker.firstName} ${seeker.lastName}`.trim() || seeker.nicNumber;
+    if (!window.confirm(`Issue a new reference number for ${name}? The old number ${seeker.refNo || ''} will no longer be used.`)) {
+      return;
+    }
+
+    setReissuingId(seeker.id);
+    try {
+      const res = await api.post(`/admin/jobseeker/${seeker.id}/reissue-refno`);
+      const { refNo, refNoIssuedOn } = res.data;
+      setSeekers((prev) => prev.map((s) => (s.id === seeker.id ? { ...s, refNo, refNoIssuedOn, refNoValid: true } : s)));
+      setPool((prev) => prev.map((c) => (c.id === seeker.id ? { ...c, refNo } : c)));
+      setReissuedRefNo(refNo);
+    } catch (err: unknown) {
+      console.error('Error re-issuing reference number', err);
+      const error = err as { response?: { data?: { message?: string } } };
+      alert(error.response?.data?.message || 'Failed to re-issue the reference number.');
+    } finally {
+      setReissuingId(null);
     }
   };
 
@@ -598,7 +627,16 @@ const AdminDashboard: React.FC = () => {
                       ) : (
                         filteredSeekers.map((seeker) => (
                           <tr key={seeker.id} className="hover:bg-slate-900/30 transition-colors">
-                            <td className="p-4 font-mono text-xs text-purple-400">{seeker.refNo || '—'}</td>
+                            <td className="p-4">
+                              <span className="block font-mono text-xs text-purple-400">{seeker.refNo || '—'}</span>
+                              {seeker.refNo && (
+                                seeker.refNoValid ? (
+                                  <span className="inline-flex mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Valid today</span>
+                                ) : (
+                                  <span className="inline-flex mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-500/10 text-slate-400 border border-slate-500/30">Expired</span>
+                                )
+                              )}
+                            </td>
                             <td className="p-4">
                               <div className="flex flex-col">
                                 <span className="font-semibold text-slate-200">
@@ -651,6 +689,26 @@ const AdminDashboard: React.FC = () => {
                                   <Pencil className="h-4 w-4" />
                                   <span className="text-xs font-bold px-1">View / Edit</span>
                                 </Link>
+                                {!seeker.refNoValid && seeker.applicationStatus === 'Accepted' && (
+                                  <span
+                                    className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 border border-slate-700/60 rounded-lg whitespace-nowrap cursor-not-allowed"
+                                    title="This job seeker has been hired, so a new reference number cannot be issued."
+                                  >
+                                    Hired · No re-issue
+                                  </span>
+                                )}
+                                {!seeker.refNoValid && seeker.applicationStatus !== 'Accepted' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReissueRefNo(seeker)}
+                                    disabled={reissuingId === seeker.id}
+                                    className="p-2 text-emerald-400 hover:text-emerald-300 bg-emerald-500/5 border border-emerald-500/10 hover:border-emerald-500/30 rounded-lg transition-all inline-flex items-center space-x-1 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                                    title="Issue a new reference number for today's visit"
+                                  >
+                                    <RefreshCw className={`h-4 w-4 ${reissuingId === seeker.id ? 'animate-spin' : ''}`} />
+                                    <span className="text-xs font-bold px-1">Re-issue Ref No</span>
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -890,6 +948,15 @@ const AdminDashboard: React.FC = () => {
             <UserRegistration onRegistered={refreshUsersAndStats} />
           )}
         </div>
+      )}
+
+      {reissuedRefNo && (
+        <RegistrationSuccessModal
+          refNo={reissuedRefNo}
+          message="New reference number issued."
+          buttonLabel="Done"
+          onClose={() => setReissuedRefNo(null)}
+        />
       )}
     </div>
   );

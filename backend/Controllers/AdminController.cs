@@ -220,6 +220,8 @@ namespace JobBank.Api.Controllers
             var totalJobPosts = _context.JobPosts.Count();
             var activeJobPosts = _context.JobPosts.Count(j => j.IsActive);
             var totalApplications = _context.JobApplications.Count();
+            var acceptedCandidates = _context.JobApplications.Count(a => a.Status == ApplicationStatus.Accepted);
+            var rejectedCandidates = _context.JobApplications.Count(a => a.Status == ApplicationStatus.Rejected);
 
             return Ok(new AdminStatsDto
             {
@@ -228,7 +230,9 @@ namespace JobBank.Api.Controllers
                 TotalJobSeekers = totalJobSeekers,
                 TotalJobPosts = totalJobPosts,
                 ActiveJobPosts = activeJobPosts,
-                TotalApplications = totalApplications
+                TotalApplications = totalApplications,
+                AcceptedCandidates = acceptedCandidates,
+                RejectedCandidates = rejectedCandidates
             });
         }
 

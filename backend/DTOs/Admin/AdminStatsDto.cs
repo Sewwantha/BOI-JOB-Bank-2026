@@ -8,5 +8,7 @@ namespace JobBank.Api.DTOs.Admin
         public int TotalJobPosts { get; set; }
         public int ActiveJobPosts { get; set; }
         public int TotalApplications { get; set; }
+        public int AcceptedCandidates { get; set; }
+        public int RejectedCandidates { get; set; }
     }
 }

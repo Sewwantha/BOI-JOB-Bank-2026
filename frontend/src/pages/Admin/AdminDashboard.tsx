@@ -3,7 +3,6 @@ import {
   Users, Briefcase, Trash2, Shield, Search,
   UserCheck,
   FileCheck,
-  ShieldAlert,
   Mail,
   Calendar,
   MapPin,
@@ -12,7 +11,10 @@ import {
   Pencil,
   Phone,
   FileText,
-  Sparkles
+  Sparkles,
+  Building2,
+  UsersRound,
+  ClipboardList,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
@@ -28,6 +30,8 @@ interface Stats {
   totalJobPosts: number;
   activeJobPosts: number;
   totalApplications: number;
+  acceptedCandidates: number;
+  rejectedCandidates: number;
 }
 
 interface SystemUser {
@@ -70,8 +74,8 @@ interface SystemJobSeeker {
   applicationStatus: ApplicationStatus | null;
 }
 
-type AdminTab = 'stats' | 'users' | 'seekers' | 'pool' | 'matching' | 'jobs' | 'register';
-const ADMIN_TABS: AdminTab[] = ['stats', 'users', 'seekers', 'pool', 'matching', 'jobs', 'register'];
+type AdminTab = 'stats' | 'users' | 'seekers' | 'pool' | 'matching' | 'jobs' | 'vacancies' | 'register';
+const ADMIN_TABS: AdminTab[] = ['stats', 'users', 'seekers', 'pool', 'matching', 'jobs', 'vacancies', 'register'];
 
 const AdminDashboard: React.FC = () => {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -91,6 +95,7 @@ const AdminDashboard: React.FC = () => {
   const [userSearch, setUserSearch] = useState('');
   const [jobSearch, setJobSearch] = useState('');
   const [seekerSearch, setSeekerSearch] = useState('');
+  const [vacancySearch, setVacancySearch] = useState('');
 
   const fetchAdminData = async () => {
     try {
@@ -197,6 +202,15 @@ const AdminDashboard: React.FC = () => {
     j.location.toLowerCase().includes(jobSearch.toLowerCase())
   );
 
+  // Active vacancies filtered for the Vacancies tab
+  const activeVacancies = jobs.filter((j) => j.isActive);
+  const filteredVacancies = activeVacancies.filter((j) =>
+    j.title.toLowerCase().includes(vacancySearch.toLowerCase()) ||
+    j.companyName.toLowerCase().includes(vacancySearch.toLowerCase()) ||
+    j.location.toLowerCase().includes(vacancySearch.toLowerCase()) ||
+    j.jobCategory.toLowerCase().includes(vacancySearch.toLowerCase())
+  );
+
   return (
     <div className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col justify-start">
       {/* Dashboard title */}
@@ -280,6 +294,17 @@ const AdminDashboard: React.FC = () => {
               Job Listings ({jobs.length})
             </button>
             <button
+              onClick={() => setActiveTab('vacancies')}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center space-x-1 ${
+                activeTab === 'vacancies'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              <span>Job Vacancies ({activeVacancies.length})</span>
+            </button>
+            <button
               onClick={() => setActiveTab('register')}
               className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center space-x-1 ${
                 activeTab === 'register' 
@@ -340,49 +365,43 @@ const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Graphical representation / system warnings */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Moderation Warning Card */}
-                <div className="glass p-8 rounded-3xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full filter blur-3xl pointer-events-none"></div>
-                  <div className="flex items-start space-x-3.5 relative z-10">
-                    <div className="h-10 w-10 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 mt-0.5">
-                      <ShieldAlert className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-lg font-bold text-slate-200">Moderator Responsibility Guideline</h4>
-                      <p className="text-slate-400 text-sm mt-2 leading-relaxed">
-                        As an administrator, you possess full control over the DB tables. Terminating a user removes their entire record, including any active postings or candidacies. Ensure moderation actions strictly abide by company code of conduct.
-                      </p>
-                      <ul className="list-disc pl-5 text-xs text-slate-500 space-y-1 mt-4">
-                        <li>Evaluate user flags carefully before account deletion.</li>
-                        <li>Spam postings can be mitigated by deleting specific job posts instead of the entire user.</li>
-                        <li>Contact support if critical databases become unresponsive.</li>
-                      </ul>
-                    </div>
+              {/* Candidate Outcome Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {/* Accepted Candidates */}
+                <div className="glass p-6 rounded-2xl flex items-center justify-between relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-28 h-28 bg-emerald-500/5 rounded-full filter blur-3xl pointer-events-none" />
+                  <div className="relative z-10">
+                    <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Hired Candidates</span>
+                    <h3 className="text-3xl font-extrabold text-emerald-400 mt-2">{stats.acceptedCandidates}</h3>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {stats.totalJobSeekers > 0
+                        ? `${((stats.acceptedCandidates / stats.totalJobSeekers) * 100).toFixed(1)}% of total seekers`
+                        : 'No seekers yet'}
+                    </p>
+                  </div>
+                  <div className="h-14 w-14 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 relative z-10">
+                    <UserCheck className="h-7 w-7" />
                   </div>
                 </div>
 
-                {/* DB Health Summary Card */}
-                <div className="glass p-8 rounded-3xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full filter blur-3xl pointer-events-none"></div>
-                  <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-4">System Health Status</h4>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center bg-slate-950/30 p-3 rounded-lg border border-slate-850">
-                      <span className="text-xs text-slate-400 font-semibold">API Server Endpoint</span>
-                      <span className="inline-flex px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">ONLINE</span>
-                    </div>
-                    <div className="flex justify-between items-center bg-slate-950/30 p-3 rounded-lg border border-slate-850">
-                      <span className="text-xs text-slate-400 font-semibold">SQL Database Engine</span>
-                      <span className="inline-flex px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">CONNECTED</span>
-                    </div>
-                    <div className="flex justify-between items-center bg-slate-950/30 p-3 rounded-lg border border-slate-850">
-                      <span className="text-xs text-slate-400 font-semibold">JWT Signature Modules</span>
-                      <span className="inline-flex px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">VERIFIED</span>
-                    </div>
+                {/* Rejected Candidates */}
+                <div className="glass p-6 rounded-2xl flex items-center justify-between relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-28 h-28 bg-rose-500/5 rounded-full filter blur-3xl pointer-events-none" />
+                  <div className="relative z-10">
+                    <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Rejected Candidates</span>
+                    <h3 className="text-3xl font-extrabold text-rose-400 mt-2">{stats.rejectedCandidates}</h3>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {stats.totalJobSeekers > 0
+                        ? `${((stats.rejectedCandidates / stats.totalJobSeekers) * 100).toFixed(1)}% of total seekers`
+                        : 'No seekers yet'}
+                    </p>
+                  </div>
+                  <div className="h-14 w-14 rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center shrink-0 relative z-10">
+                    <Trash2 className="h-7 w-7" />
                   </div>
                 </div>
               </div>
+
             </div>
           )}
 
@@ -694,6 +713,119 @@ const AdminDashboard: React.FC = () => {
                   </table>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB: JOB VACANCIES CARD VIEW */}
+          {activeTab === 'vacancies' && (
+            <div className="space-y-5">
+              {/* Header row: search + summary */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="relative max-w-md w-full">
+                  <Search className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
+                  <input
+                    type="text"
+                    value={vacancySearch}
+                    onChange={(e) => setVacancySearch(e.target.value)}
+                    placeholder="Search by title, company, location, or category..."
+                    className="w-full bg-slate-900/60 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all text-sm font-medium"
+                  />
+                </div>
+                <span className="text-xs text-slate-500 font-semibold shrink-0">
+                  {filteredVacancies.length} active {filteredVacancies.length === 1 ? 'vacancy' : 'vacancies'}
+                </span>
+              </div>
+
+              {/* Vacancy Cards Grid */}
+              {filteredVacancies.length === 0 ? (
+                <div className="glass rounded-2xl p-16 text-center text-slate-500">
+                  No active vacancies match the search terms.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {filteredVacancies.map((job) => (
+                    <div
+                      key={job.id}
+                      className="glass rounded-2xl p-5 border border-slate-800 hover:border-indigo-500/40 transition-all flex flex-col gap-4 relative overflow-hidden"
+                    >
+                      {/* Decorative accent */}
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full filter blur-2xl pointer-events-none" />
+
+                      {/* Title + company */}
+                      <div className="flex items-start justify-between gap-2 relative z-10">
+                        <div>
+                          <h3 className="text-sm font-extrabold text-slate-100 leading-snug">{job.title}</h3>
+                          <div className="flex items-center space-x-1 mt-0.5">
+                            <Building2 className="h-3 w-3 text-slate-500 shrink-0" />
+                            <span className="text-xs text-slate-400 font-semibold truncate">{job.companyName}</span>
+                          </div>
+                        </div>
+                        <span className="inline-flex px-2 py-0.5 rounded text-[9px] uppercase font-extrabold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+                          {job.jobType}
+                        </span>
+                      </div>
+
+                      {/* Category badge */}
+                      <div className="relative z-10">
+                        <span className="inline-flex px-2 py-0.5 rounded text-[9px] uppercase font-extrabold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          {job.jobCategory || 'Uncategorised'}
+                        </span>
+                      </div>
+
+                      {/* Key Details */}
+                      <div className="relative z-10 space-y-2">
+                        {/* Location */}
+                        <div className="flex items-center space-x-2 bg-slate-950/40 rounded-lg px-3 py-2 border border-slate-800">
+                          <MapPin className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                          <div>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Location</p>
+                            <p className="text-xs text-slate-200 font-semibold mt-0.5">{job.location || '—'}</p>
+                          </div>
+                        </div>
+
+                        {/* Positions Available */}
+                        <div className="flex items-center space-x-2 bg-slate-950/40 rounded-lg px-3 py-2 border border-slate-800">
+                          <UsersRound className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+                          <div>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Positions Available</p>
+                            {(job.remainingPositions ?? job.positionsAvailable ?? 1) > 0 ? (
+                              <p className="text-xs font-extrabold mt-0.5">
+                                <span className="text-sky-300 text-sm">{job.remainingPositions ?? job.positionsAvailable ?? 1}</span>
+                                <span className="text-slate-400 ml-1">of {job.positionsAvailable ?? 1} {(job.positionsAvailable ?? 1) === 1 ? 'position' : 'positions'}</span>
+                              </p>
+                            ) : (
+                              <p className="text-xs font-extrabold mt-0.5 text-rose-400">All {job.positionsAvailable} filled</p>
+                            )}
+                            {(job.filledPositions ?? 0) > 0 && (
+                              <p className="text-[10px] text-emerald-400 font-semibold mt-0.5">{job.filledPositions} selected by employer</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Salary */}
+                        <div className="flex items-center space-x-2 bg-slate-950/40 rounded-lg px-3 py-2 border border-slate-800">
+                          <Banknote className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                          <div>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Salary Range</p>
+                            <p className="text-xs text-emerald-300 font-extrabold mt-0.5">{job.salaryRange || '—'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer: posted date */}
+                      <div className="relative z-10 flex items-center justify-between pt-1 border-t border-slate-800/60">
+                        <div className="flex items-center space-x-1 text-slate-500">
+                          <Calendar className="h-3 w-3" />
+                          <span className="text-[10px]">Posted {new Date(job.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+                          Active
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

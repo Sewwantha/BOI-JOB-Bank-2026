@@ -440,7 +440,7 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Available Job Locations (Zone)</label>
+                  <label className={labelClass}>Available Jobs Location in Zone</label>
                   <SelectInput value={seeker.preferredZone} onChange={selectZone} options={zones} placeholder={zonesLoading ? 'Loading zones...' : zones.length ? 'Select Zone' : 'No zones for your location'} />
                 </div>
                 {seeker.preferredZone && (

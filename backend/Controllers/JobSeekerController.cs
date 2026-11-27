@@ -21,12 +21,29 @@ namespace JobBank.Api.Controllers
         private readonly JobBankDbContext _context;
         private readonly IWebHostEnvironment _env;
         private readonly IConfiguration _config;
+        private readonly LocationDbService _locationDb;
 
-        public JobSeekerController(JobBankDbContext context, IWebHostEnvironment env, IConfiguration config)
+        public JobSeekerController(JobBankDbContext context, IWebHostEnvironment env, IConfiguration config, LocationDbService locationDb)
         {
             _context = context;
             _env = env;
             _config = config;
+            _locationDb = locationDb;
+        }
+
+        // Preferred Job Locations (Zone): Location table (LocName, LocCd) from the Commonwtc database
+        [Authorize]
+        [HttpGet("zones")]
+        public IActionResult GetZones()
+        {
+            try
+            {
+                return Ok(_locationDb.GetLocations());
+            }
+            catch (Microsoft.Data.SqlClient.SqlException)
+            {
+                return StatusCode(503, new { Message = "Cannot connect to the location database. Please try again later." });
+            }
         }
 
         internal static JobSeekerProfileDto MapToDto(JobSeekerProfile seeker)

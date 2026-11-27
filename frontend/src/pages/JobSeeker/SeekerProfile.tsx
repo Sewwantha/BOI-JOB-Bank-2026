@@ -9,7 +9,6 @@ import { isValidDob, getMinDob, getMaxDob, DOB_ERROR } from '../../utils/dobVali
 import { sanitizePhone, isValidPhone, PHONE_LENGTH, MOBILE_ERROR, LANDLINE_ERROR } from '../../utils/phoneValidation';
 import {
   districtsList,
-  zonesList,
   eduQualificationsList,
   vocationalTrainingList,
   experienceList,
@@ -62,6 +61,18 @@ const SeekerProfile: React.FC = () => {
   const [address, setAddress] = useState('');
   const [district, setDistrict] = useState('');
   const [preferredZone, setPreferredZone] = useState('');
+
+  // Preferred Job Locations (Zone) come from the Location table (LocName, LocCd) in the Commonwtc database
+  const [zones, setZones] = useState<{ locCd: string; locName: string }[]>([]);
+  const [zonesLoading, setZonesLoading] = useState(true);
+  const [zonesError, setZonesError] = useState(false);
+
+  useEffect(() => {
+    api.get<{ locCd: string; locName: string }[]>('/jobseeker/zones')
+      .then((res) => setZones(res.data))
+      .catch(() => setZonesError(true))
+      .finally(() => setZonesLoading(false));
+  }, []);
 
   const [educationalQualifications, setEducationalQualifications] = useState('');
   const [vocationalTraining, setVocationalTraining] = useState('');
@@ -273,7 +284,7 @@ const SeekerProfile: React.FC = () => {
       return;
     }
     if (!preferredZone) {
-      setMessage({ type: 'error', text: 'Available Job Locations (Zone) is required.' });
+      setMessage({ type: 'error', text: 'Preferred Job Locations (Zone) is required.' });
       setSaving(false);
       return;
     }
@@ -589,7 +600,7 @@ const SeekerProfile: React.FC = () => {
               {/* Preferred Zone Dropdown */}
               <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1.5">
-                  Available Job Locations (Zone) <span className="text-rose-500 font-bold">*</span>
+                  Preferred Job Locations (Zone) <span className="text-rose-500 font-bold">*</span>
                 </label>
                 <div className="relative">
                   <select
@@ -598,12 +609,21 @@ const SeekerProfile: React.FC = () => {
                     onChange={(e) => setPreferredZone(e.target.value)}
                     className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-250 cursor-pointer"
                   >
-                    <option value="" disabled className="bg-slate-950 text-slate-500">Select Zone</option>
-                    {zonesList.map((zn) => (
-                      <option key={zn} value={zn} className="bg-slate-950 text-slate-350">{zn}</option>
+                    <option value="" disabled className="bg-slate-950 text-slate-500">
+                      {zonesLoading ? 'Loading zones...' : zonesError ? 'Could not load zones' : 'Select Zone'}
+                    </option>
+                    {/* Keep a previously saved zone selectable even if it is no longer in the Location table */}
+                    {preferredZone && !zonesLoading && !zones.some((z) => z.locName === preferredZone) && (
+                      <option value={preferredZone} className="bg-slate-950 text-slate-350">{preferredZone}</option>
+                    )}
+                    {zones.map((z) => (
+                      <option key={z.locCd} value={z.locName} className="bg-slate-950 text-slate-350">{z.locName}</option>
                     ))}
                   </select>
                 </div>
+                {zonesError && (
+                  <p className="mt-1 text-xs text-rose-400">Could not load job locations. Please refresh the page or try again later.</p>
+                )}
               </div>
 
             </div>

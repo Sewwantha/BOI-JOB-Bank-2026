@@ -33,6 +33,9 @@ builder.Services.AddDbContext<JobBankDbContext>(options =>
 // Shared "common" database: admin users (UsrUser) and zones (project)
 builder.Services.AddScoped<CommonDbService>();
 
+// "Commonwtc" database: Preferred Job Locations (Zone) for job seekers (Location table)
+builder.Services.AddScoped<LocationDbService>();
+
 // Weekly candidate pool / job vacancy matching
 builder.Services.AddHostedService<WeeklyMatchingService>();
 

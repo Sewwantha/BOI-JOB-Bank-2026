@@ -4,9 +4,11 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { CheckCircle, AlertCircle, ArrowLeft, FileText } from 'lucide-react';
 import api from '../../services/api';
+import { sanitizeFullName, isValidFullName, FULL_NAME_ERROR } from '../../utils/nameValidation';
+import { isValidDob, getMinDob, getMaxDob, DOB_ERROR } from '../../utils/dobValidation';
+import { sanitizePhone, isValidPhone, PHONE_LENGTH, MOBILE_ERROR, LANDLINE_ERROR } from '../../utils/phoneValidation';
 import {
   districtsList,
-  zonesList,
   eduQualificationsList,
   vocationalTrainingList,
   experienceList,
@@ -17,6 +19,7 @@ interface JobSeekerProfile {
   id?: string;
   registeredAt?: string;
   refNo?: string;
+  refNoValid?: boolean;
   firstName?: string;
   lastName?: string;
   dateOfBirth?: string;
@@ -46,6 +49,7 @@ const SeekerProfile: React.FC = () => {
   // Reference & Cache
   const [profileId, setProfileId] = useState<string>('');
   const [refNo, setRefNo] = useState<string>('');
+  const [refNoValid, setRefNoValid] = useState<boolean>(true);
   const [cachedProfile, setCachedProfile] = useState<JobSeekerProfile | null>(null);
 
   // Form states
@@ -59,6 +63,18 @@ const SeekerProfile: React.FC = () => {
   const [address, setAddress] = useState('');
   const [district, setDistrict] = useState('');
   const [preferredZone, setPreferredZone] = useState('');
+
+  // Preferred Job Locations (Zone) come from the Location table (LocName, LocCd) in the Commonwtc database
+  const [zones, setZones] = useState<{ locCd: string; locName: string }[]>([]);
+  const [zonesLoading, setZonesLoading] = useState(true);
+  const [zonesError, setZonesError] = useState(false);
+
+  useEffect(() => {
+    api.get<{ locCd: string; locName: string }[]>('/jobseeker/zones')
+      .then((res) => setZones(res.data))
+      .catch(() => setZonesError(true))
+      .finally(() => setZonesLoading(false));
+  }, []);
 
   const [educationalQualifications, setEducationalQualifications] = useState('');
   const [vocationalTraining, setVocationalTraining] = useState('');
@@ -131,6 +147,7 @@ const SeekerProfile: React.FC = () => {
 
           setProfileId(profile.id || '');
           setRefNo(profile.refNo || '');
+          setRefNoValid(profile.refNoValid !== false);
           setFullName(parseFullName(profile.firstName, profile.lastName));
 
           // Format Date of Birth if it is ISO date
@@ -224,13 +241,33 @@ const SeekerProfile: React.FC = () => {
       setSaving(false);
       return;
     }
+    if (!isValidFullName(fullName)) {
+      setMessage({ type: 'error', text: FULL_NAME_ERROR });
+      setSaving(false);
+      return;
+    }
     if (!dateOfBirth) {
       setMessage({ type: 'error', text: 'Date of Birth is required.' });
       setSaving(false);
       return;
     }
+    if (!isValidDob(dateOfBirth)) {
+      setMessage({ type: 'error', text: DOB_ERROR });
+      setSaving(false);
+      return;
+    }
     if (!mobileNumber.trim()) {
       setMessage({ type: 'error', text: 'Mobile Number is required.' });
+      setSaving(false);
+      return;
+    }
+    if (!isValidPhone(mobileNumber)) {
+      setMessage({ type: 'error', text: MOBILE_ERROR });
+      setSaving(false);
+      return;
+    }
+    if (landlineNumber.trim() && !isValidPhone(landlineNumber)) {
+      setMessage({ type: 'error', text: LANDLINE_ERROR });
       setSaving(false);
       return;
     }
@@ -250,7 +287,7 @@ const SeekerProfile: React.FC = () => {
       return;
     }
     if (!preferredZone) {
-      setMessage({ type: 'error', text: 'Available Job Locations (Zone) is required.' });
+      setMessage({ type: 'error', text: 'Preferred Job Locations (Zone) is required.' });
       setSaving(false);
       return;
     }
@@ -360,7 +397,17 @@ const SeekerProfile: React.FC = () => {
           {profileId && refNo && (
             <div className="inline-block mt-4 px-4 py-1.5 bg-purple-950/40 border border-purple-500/25 text-purple-400 text-sm font-mono rounded-full tracking-wider shadow-inner">
               REF NO: {refNo}
+              <span className={`ml-2 text-[10px] font-sans font-bold uppercase ${refNoValid ? 'text-emerald-400' : 'text-slate-400'}`}>
+                {refNoValid ? '· Valid today' : '· Expired'}
+              </span>
             </div>
+          )}
+          {profileId && refNo && !refNoValid && (
+            <p className="text-xs text-slate-500 mt-2">
+              {isAdminMode
+                ? 'This reference number was issued on an earlier day. Use "Re-issue Ref No" in the Job Seekers list for today’s visit.'
+                : 'Reference numbers are valid only on the day they are issued. Please ask the admin office for a new one on your next visit.'}
+            </p>
           )}
           {isAdminMode && resumeUrl && !resumeUrl.includes('example.com') && (
             <div className="mt-4">
@@ -413,7 +460,9 @@ const SeekerProfile: React.FC = () => {
                   type="text"
                   required
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => setFullName(sanitizeFullName(e.target.value))}
+                  pattern="[A-Za-z][A-Za-z.]*( [A-Za-z.]+)*"
+                  title="Alphabetic characters, dots and spaces only"
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 placeholder-slate-655 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-200"
                   placeholder="Enter your full name"
                 />
@@ -429,6 +478,8 @@ const SeekerProfile: React.FC = () => {
                   required
                   value={dateOfBirth}
                   onChange={(e) => setDateOfBirth(e.target.value)}
+                  min={getMinDob()}
+                  max={getMaxDob()}
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-200"
                 />
               </div>
@@ -454,9 +505,11 @@ const SeekerProfile: React.FC = () => {
                 </label>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={PHONE_LENGTH}
                   required
                   value={mobileNumber}
-                  onChange={(e) => setMobileNumber(e.target.value)}
+                  onChange={(e) => setMobileNumber(sanitizePhone(e.target.value))}
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 placeholder-slate-655 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-200"
                   placeholder="e.g. 0771234567"
                 />
@@ -469,8 +522,10 @@ const SeekerProfile: React.FC = () => {
                 </label>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={PHONE_LENGTH}
                   value={landlineNumber}
-                  onChange={(e) => setLandlineNumber(e.target.value)}
+                  onChange={(e) => setLandlineNumber(sanitizePhone(e.target.value))}
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 placeholder-slate-655 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-200"
                   placeholder="e.g. 0112345678"
                 />
@@ -558,7 +613,7 @@ const SeekerProfile: React.FC = () => {
               {/* Preferred Zone Dropdown */}
               <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1.5">
-                  Available Job Locations (Zone) <span className="text-rose-500 font-bold">*</span>
+                  Preferred Job Locations (Zone) <span className="text-rose-500 font-bold">*</span>
                 </label>
                 <div className="relative">
                   <select
@@ -567,12 +622,21 @@ const SeekerProfile: React.FC = () => {
                     onChange={(e) => setPreferredZone(e.target.value)}
                     className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-250 cursor-pointer"
                   >
-                    <option value="" disabled className="bg-slate-950 text-slate-500">Select Zone</option>
-                    {zonesList.map((zn) => (
-                      <option key={zn} value={zn} className="bg-slate-950 text-slate-350">{zn}</option>
+                    <option value="" disabled className="bg-slate-950 text-slate-500">
+                      {zonesLoading ? 'Loading zones...' : zonesError ? 'Could not load zones' : 'Select Zone'}
+                    </option>
+                    {/* Keep a previously saved zone selectable even if it is no longer in the Location table */}
+                    {preferredZone && !zonesLoading && !zones.some((z) => z.locName === preferredZone) && (
+                      <option value={preferredZone} className="bg-slate-950 text-slate-350">{preferredZone}</option>
+                    )}
+                    {zones.map((z) => (
+                      <option key={z.locCd} value={z.locName} className="bg-slate-950 text-slate-350">{z.locName}</option>
                     ))}
                   </select>
                 </div>
+                {zonesError && (
+                  <p className="mt-1 text-xs text-rose-400">Could not load job locations. Please refresh the page or try again later.</p>
+                )}
               </div>
 
             </div>

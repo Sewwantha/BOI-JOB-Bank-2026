@@ -50,6 +50,7 @@ namespace JobBank.Api.Controllers
                 PasswordHash = PasswordHasher.Hash(dto.Password),
                 Role = dto.Role
             };
+            OfficialCompany? officialCompany = null;
 
             if (dto.Role == UserRole.JobSeeker)
             {
@@ -59,10 +60,10 @@ namespace JobBank.Api.Controllers
                     return BadRequest(new { Message = "NIC number is required for Job Seekers." });
                 }
 
-                var nicTrimmed = dto.NicNumber.Trim();
-                if (nicTrimmed.Length != 10)
+                var nicTrimmed = NicHelper.Normalize(dto.NicNumber);
+                if (!NicHelper.IsValid(nicTrimmed))
                 {
-                    return BadRequest(new { Message = "NIC number must be exactly 10 characters." });
+                    return BadRequest(new { Message = NicHelper.ErrorMessage });
                 }
 
                 if (_context.Users.Any(u => u.NicNumber == nicTrimmed))
@@ -87,6 +88,29 @@ namespace JobBank.Api.Controllers
                     return BadRequest(new { Message = "User with this email already exists." });
                 }
 
+                // Employers pick their official company name, so the vacancy zone can be found
+                if (string.IsNullOrWhiteSpace(dto.CompanyName))
+                {
+                    return BadRequest(new { Message = "Please select your company." });
+                }
+                try
+                {
+                    officialCompany = _commonDb.FindCompany(dto.CompanyName);
+                }
+                catch (SqlException)
+                {
+                    return StatusCode(503, new { Message = "Cannot connect to the company database. Please try again later." });
+                }
+                if (officialCompany == null)
+                {
+                    return BadRequest(new { Message = "Please select your company from the official company list." });
+                }
+                var officialUpper = officialCompany.Name.ToUpper();
+                if (_context.CompanyProfiles.Any(c => c.CompanyName.Trim().ToUpper() == officialUpper))
+                {
+                    return BadRequest(new { Message = "An employer account for this company already exists. Please contact the BOI admin office." });
+                }
+
                 user.Email = dto.Email.Trim();
             }
 
@@ -101,7 +125,7 @@ namespace JobBank.Api.Controllers
                 var company = new CompanyProfile
                 {
                     UserId = user.Id,
-                    CompanyName = dto.Email.Split('@')[0] + "'s Company", // default name
+                    CompanyName = officialCompany!.Name, // official name from the company list
                     Description = "Update company description here.",
                     Website = "",
                     Location = "",
@@ -157,7 +181,7 @@ namespace JobBank.Api.Controllers
             if (!string.IsNullOrWhiteSpace(dto.NicNumber))
             {
                 // Login via NIC number (Job Seekers)
-                var nicTrimmed = dto.NicNumber.Trim();
+                var nicTrimmed = NicHelper.Normalize(dto.NicNumber);
                 user = _context.Users
                     .Include(u => u.CompanyProfile)
                     .Include(u => u.JobSeekerProfile)
@@ -180,6 +204,12 @@ namespace JobBank.Api.Controllers
             if (user == null || user.Role == UserRole.Admin || user.PasswordHash != PasswordHasher.Hash(dto.Password))
             {
                 return Unauthorized(new { Message = "Invalid credentials." });
+            }
+
+            // Checked after the password so the message does not reveal which accounts exist
+            if (!user.IsActive)
+            {
+                return Unauthorized(new { Message = "Your account has been deactivated. Please contact the administrator." });
             }
 
             var token = GenerateJwtToken(user);

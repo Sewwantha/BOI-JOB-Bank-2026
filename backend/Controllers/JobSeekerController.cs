@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using JobBank.Api.Data;
+using JobBank.Api.Helpers;
 using JobBank.Api.DTOs.JobSeeker;
 using JobBank.Api.Models;
 
@@ -21,12 +22,29 @@ namespace JobBank.Api.Controllers
         private readonly JobBankDbContext _context;
         private readonly IWebHostEnvironment _env;
         private readonly IConfiguration _config;
+        private readonly LocationDbService _locationDb;
 
-        public JobSeekerController(JobBankDbContext context, IWebHostEnvironment env, IConfiguration config)
+        public JobSeekerController(JobBankDbContext context, IWebHostEnvironment env, IConfiguration config, LocationDbService locationDb)
         {
             _context = context;
             _env = env;
             _config = config;
+            _locationDb = locationDb;
+        }
+
+        // Preferred Job Locations (Zone): Location table (LocName, LocCd) from the Commonwtc database
+        [Authorize]
+        [HttpGet("zones")]
+        public IActionResult GetZones()
+        {
+            try
+            {
+                return Ok(_locationDb.GetLocations());
+            }
+            catch (Microsoft.Data.SqlClient.SqlException)
+            {
+                return StatusCode(503, new { Message = "Cannot connect to the location database. Please try again later." });
+            }
         }
 
         internal static JobSeekerProfileDto MapToDto(JobSeekerProfile seeker)
@@ -36,6 +54,8 @@ namespace JobBank.Api.Controllers
                 Id = seeker.Id,
                 UserId = seeker.UserId,
                 RefNo = seeker.RefNo,
+                RefNoValid = RefNoGenerator.IsValidToday(seeker.RefNo),
+                RefNoIssuedOn = RefNoGenerator.IssuedOn(seeker.RefNo),
                 FirstName = seeker.FirstName,
                 LastName = seeker.LastName,
                 DateOfBirth = seeker.DateOfBirth,

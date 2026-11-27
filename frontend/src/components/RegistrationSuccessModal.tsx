@@ -42,7 +42,7 @@ const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> = ({
         <h3 id="registration-success-title" className="text-xl font-extrabold text-slate-100 mb-2">
           {message}
         </h3>
-        <p className="text-sm text-slate-400 mb-6">Please keep this reference number for future use.</p>
+        <p className="text-sm text-slate-400 mb-6">This reference number is valid for today only. On a later visit, the admin office will issue a new one.</p>
 
         <div className="mb-6 flex items-center justify-center gap-3 px-4 py-3 bg-purple-950/40 border border-purple-500/25 rounded-2xl">
           <span className="text-xs font-semibold text-slate-400">REF NO</span>

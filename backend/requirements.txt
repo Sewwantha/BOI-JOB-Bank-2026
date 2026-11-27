@@ -4,3 +4,10 @@ pydantic
 python-multipart
 PyPDF2
 python-docx
+
+# NIC scan reader (parse_nic.py)
+rapidocr
+onnxruntime
+pymupdf
+pillow
+numpy

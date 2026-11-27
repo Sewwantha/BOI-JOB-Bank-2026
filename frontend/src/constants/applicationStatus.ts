@@ -7,3 +7,12 @@ export const statusBadgeClass: Record<ApplicationStatus, string> = {
   Accepted: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   Rejected: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
 };
+
+// Text shown on the admin side. "Accepted" (employer selected the candidate) is shown as "Hired".
+export const statusLabel: Record<ApplicationStatus, string> = {
+  Applied: 'Applied',
+  Reviewing: 'Reviewing',
+  Shortlisted: 'Shortlisted',
+  Accepted: 'Hired',
+  Rejected: 'Rejected',
+};

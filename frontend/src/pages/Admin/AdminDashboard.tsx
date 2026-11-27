@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, Briefcase, Trash2, Shield, Search,
   UserCheck,
+  UserX,
   FileCheck,
-  ShieldAlert,
   Mail,
   Calendar,
   MapPin,
@@ -12,14 +12,21 @@ import {
   Pencil,
   Phone,
   FileText,
-  Sparkles
+  Sparkles,
+  Building2,
+  UsersRound,
+  ClipboardList,
+  RefreshCw,
+  Link2
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import UserRegistration from './UserRegistration';
 import CandidatePool, { type PoolCandidate } from './CandidatePool';
 import WeeklyMatching from './WeeklyMatching';
-import { type ApplicationStatus, statusBadgeClass } from '../../constants/applicationStatus';
+import RegistrationSuccessModal from '../../components/RegistrationSuccessModal';
+import CompanyPicker, { type OfficialCompany } from '../../components/CompanyPicker';
+import { type ApplicationStatus, statusBadgeClass, statusLabel } from '../../constants/applicationStatus';
 
 interface Stats {
   totalUsers: number;
@@ -28,6 +35,8 @@ interface Stats {
   totalJobPosts: number;
   activeJobPosts: number;
   totalApplications: number;
+  acceptedCandidates: number;
+  rejectedCandidates: number;
 }
 
 interface SystemUser {
@@ -35,6 +44,7 @@ interface SystemUser {
   email: string;
   role: 'Admin' | 'Employer' | 'JobSeeker';
   createdAt: string;
+  isActive: boolean;
   profileName: string;
   profileId: string | null;
 }
@@ -46,16 +56,22 @@ interface SystemJob {
   jobType: string;
   jobCategory: string;
   salaryRange: string;
+  positionsAvailable: number;
+  filledPositions?: number;
+  remainingPositions?: number;
   isActive: boolean;
   createdAt: string;
   companyName: string;
   companyId: string;
+  zone?: string;
 }
 
 interface SystemJobSeeker {
   id: string;
   userId: string;
   refNo: string;
+  refNoValid?: boolean;        // a reference number is valid only on its day of issue
+  refNoIssuedOn?: string | null;
   firstName: string;
   lastName: string;
   nicNumber: string;
@@ -67,8 +83,8 @@ interface SystemJobSeeker {
   applicationStatus: ApplicationStatus | null;
 }
 
-type AdminTab = 'stats' | 'users' | 'seekers' | 'pool' | 'matching' | 'jobs' | 'register';
-const ADMIN_TABS: AdminTab[] = ['stats', 'users', 'seekers', 'pool', 'matching', 'jobs', 'register'];
+type AdminTab = 'stats' | 'users' | 'seekers' | 'pool' | 'matching' | 'jobs' | 'vacancies' | 'register';
+const ADMIN_TABS: AdminTab[] = ['stats', 'users', 'seekers', 'pool', 'matching', 'jobs', 'vacancies', 'register'];
 
 const AdminDashboard: React.FC = () => {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -88,6 +104,7 @@ const AdminDashboard: React.FC = () => {
   const [userSearch, setUserSearch] = useState('');
   const [jobSearch, setJobSearch] = useState('');
   const [seekerSearch, setSeekerSearch] = useState('');
+  const [vacancySearch, setVacancySearch] = useState('');
 
   const fetchAdminData = async () => {
     try {
@@ -158,6 +175,94 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Deactivated users keep their records but cannot sign in; activating restores access
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const handleToggleUserStatus = async (user: SystemUser) => {
+    // Only an explicit false means inactive (matches the Active/Inactive badge and button label)
+    const activate = user.isActive === false;
+    const action = activate ? 'activate' : 'deactivate';
+    const detail = activate
+      ? 'They will be able to sign in again.'
+      : 'They will not be able to sign in, but all their records will be kept. You can activate them again at any time.';
+    if (!window.confirm(`Are you sure you want to ${action} "${user.email}"? ${detail}`)) {
+      return;
+    }
+
+    setStatusUpdatingId(user.id);
+    try {
+      await api.put(`/admin/user/${user.id}/status`, { isActive: activate });
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, isActive: activate } : u)));
+    } catch (err: unknown) {
+      console.error('Error updating user status', err);
+      const error = err as { response?: { status?: number; data?: { message?: string } } };
+      alert(
+        error.response?.data?.message ||
+        (error.response?.status === 404
+          ? `Failed to ${action} user: the server does not support this yet. Please restart the backend.`
+          : `Failed to ${action} user.`)
+      );
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  };
+
+  // Link an employer to its official company name so its vacancies show the zone
+  const [linkingUser, setLinkingUser] = useState<SystemUser | null>(null);
+  const [linkCompany, setLinkCompany] = useState<OfficialCompany | null>(null);
+  const [linkSaving, setLinkSaving] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  const openLinkCompany = (user: SystemUser) => {
+    setLinkingUser(user);
+    setLinkCompany(null);
+    setLinkError(null);
+  };
+
+  const saveLinkCompany = async () => {
+    if (!linkingUser?.profileId || !linkCompany) return;
+    setLinkSaving(true);
+    setLinkError(null);
+    try {
+      const res = await api.put(`/admin/company/${linkingUser.profileId}/official`, { companyName: linkCompany.name });
+      const newName: string = res.data.companyName;
+      setUsers((prev) => prev.map((u) => (u.id === linkingUser.id ? { ...u, profileName: newName } : u)));
+      // Vacancies carry the company name and zone, so reload them
+      const jobsRes = await api.get('/admin/jobs');
+      setJobs(jobsRes.data);
+      setLinkingUser(null);
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } };
+      setLinkError(error.response?.data?.message || 'Failed to link the company.');
+    } finally {
+      setLinkSaving(false);
+    }
+  };
+
+  // Re-issue a reference number for a returning job seeker (old one expired after its day of issue)
+  const [reissuingId, setReissuingId] = useState<string | null>(null);
+  const [reissuedRefNo, setReissuedRefNo] = useState<string | null>(null);
+  const handleReissueRefNo = async (seeker: SystemJobSeeker) => {
+    const name = `${seeker.firstName} ${seeker.lastName}`.trim() || seeker.nicNumber;
+    if (!window.confirm(`Issue a new reference number for ${name}? The old number ${seeker.refNo || ''} will no longer be used.`)) {
+      return;
+    }
+
+    setReissuingId(seeker.id);
+    try {
+      const res = await api.post(`/admin/jobseeker/${seeker.id}/reissue-refno`);
+      const { refNo, refNoIssuedOn } = res.data;
+      setSeekers((prev) => prev.map((s) => (s.id === seeker.id ? { ...s, refNo, refNoIssuedOn, refNoValid: true } : s)));
+      setPool((prev) => prev.map((c) => (c.id === seeker.id ? { ...c, refNo } : c)));
+      setReissuedRefNo(refNo);
+    } catch (err: unknown) {
+      console.error('Error re-issuing reference number', err);
+      const error = err as { response?: { data?: { message?: string } } };
+      alert(error.response?.data?.message || 'Failed to re-issue the reference number.');
+    } finally {
+      setReissuingId(null);
+    }
+  };
+
   const handleDeleteJob = async (jobId: string, title: string) => {
     if (!window.confirm(`Are you sure you want to moderate and remove the job listing: "${title}"?`)) {
       return;
@@ -192,6 +297,15 @@ const AdminDashboard: React.FC = () => {
     j.title.toLowerCase().includes(jobSearch.toLowerCase()) ||
     j.companyName.toLowerCase().includes(jobSearch.toLowerCase()) ||
     j.location.toLowerCase().includes(jobSearch.toLowerCase())
+  );
+
+  // Active vacancies filtered for the Vacancies tab
+  const activeVacancies = jobs.filter((j) => j.isActive);
+  const filteredVacancies = activeVacancies.filter((j) =>
+    j.title.toLowerCase().includes(vacancySearch.toLowerCase()) ||
+    j.companyName.toLowerCase().includes(vacancySearch.toLowerCase()) ||
+    j.location.toLowerCase().includes(vacancySearch.toLowerCase()) ||
+    j.jobCategory.toLowerCase().includes(vacancySearch.toLowerCase())
   );
 
   return (
@@ -277,6 +391,17 @@ const AdminDashboard: React.FC = () => {
               Job Listings ({jobs.length})
             </button>
             <button
+              onClick={() => setActiveTab('vacancies')}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center space-x-1 ${
+                activeTab === 'vacancies'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              <span>Job Vacancies ({activeVacancies.length})</span>
+            </button>
+            <button
               onClick={() => setActiveTab('register')}
               className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center space-x-1 ${
                 activeTab === 'register' 
@@ -337,49 +462,43 @@ const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Graphical representation / system warnings */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Moderation Warning Card */}
-                <div className="glass p-8 rounded-3xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full filter blur-3xl pointer-events-none"></div>
-                  <div className="flex items-start space-x-3.5 relative z-10">
-                    <div className="h-10 w-10 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 mt-0.5">
-                      <ShieldAlert className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-lg font-bold text-slate-200">Moderator Responsibility Guideline</h4>
-                      <p className="text-slate-400 text-sm mt-2 leading-relaxed">
-                        As an administrator, you possess full control over the DB tables. Terminating a user removes their entire record, including any active postings or candidacies. Ensure moderation actions strictly abide by company code of conduct.
-                      </p>
-                      <ul className="list-disc pl-5 text-xs text-slate-500 space-y-1 mt-4">
-                        <li>Evaluate user flags carefully before account deletion.</li>
-                        <li>Spam postings can be mitigated by deleting specific job posts instead of the entire user.</li>
-                        <li>Contact support if critical databases become unresponsive.</li>
-                      </ul>
-                    </div>
+              {/* Candidate Outcome Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {/* Accepted Candidates */}
+                <div className="glass p-6 rounded-2xl flex items-center justify-between relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-28 h-28 bg-emerald-500/5 rounded-full filter blur-3xl pointer-events-none" />
+                  <div className="relative z-10">
+                    <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Hired Candidates</span>
+                    <h3 className="text-3xl font-extrabold text-emerald-400 mt-2">{stats.acceptedCandidates}</h3>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {stats.totalJobSeekers > 0
+                        ? `${((stats.acceptedCandidates / stats.totalJobSeekers) * 100).toFixed(1)}% of total seekers`
+                        : 'No seekers yet'}
+                    </p>
+                  </div>
+                  <div className="h-14 w-14 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 relative z-10">
+                    <UserCheck className="h-7 w-7" />
                   </div>
                 </div>
 
-                {/* DB Health Summary Card */}
-                <div className="glass p-8 rounded-3xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full filter blur-3xl pointer-events-none"></div>
-                  <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-4">System Health Status</h4>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center bg-slate-950/30 p-3 rounded-lg border border-slate-850">
-                      <span className="text-xs text-slate-400 font-semibold">API Server Endpoint</span>
-                      <span className="inline-flex px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">ONLINE</span>
-                    </div>
-                    <div className="flex justify-between items-center bg-slate-950/30 p-3 rounded-lg border border-slate-850">
-                      <span className="text-xs text-slate-400 font-semibold">SQL Database Engine</span>
-                      <span className="inline-flex px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">CONNECTED</span>
-                    </div>
-                    <div className="flex justify-between items-center bg-slate-950/30 p-3 rounded-lg border border-slate-850">
-                      <span className="text-xs text-slate-400 font-semibold">JWT Signature Modules</span>
-                      <span className="inline-flex px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">VERIFIED</span>
-                    </div>
+                {/* Rejected Candidates */}
+                <div className="glass p-6 rounded-2xl flex items-center justify-between relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-28 h-28 bg-rose-500/5 rounded-full filter blur-3xl pointer-events-none" />
+                  <div className="relative z-10">
+                    <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">Rejected Candidates</span>
+                    <h3 className="text-3xl font-extrabold text-rose-400 mt-2">{stats.rejectedCandidates}</h3>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {stats.totalJobSeekers > 0
+                        ? `${((stats.rejectedCandidates / stats.totalJobSeekers) * 100).toFixed(1)}% of total seekers`
+                        : 'No seekers yet'}
+                    </p>
+                  </div>
+                  <div className="h-14 w-14 rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center shrink-0 relative z-10">
+                    <Trash2 className="h-7 w-7" />
                   </div>
                 </div>
               </div>
+
             </div>
           )}
 
@@ -408,13 +527,14 @@ const AdminDashboard: React.FC = () => {
                         <th className="p-4">Profile Display Name</th>
                         <th className="p-4">System Role</th>
                         <th className="p-4">Registration Date</th>
+                        <th className="p-4">Status</th>
                         <th className="p-4 text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800 text-sm">
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="text-center py-12 text-slate-500">
+                          <td colSpan={6} className="text-center py-12 text-slate-500">
                             No users match the search terms.
                           </td>
                         </tr>
@@ -443,6 +563,13 @@ const AdminDashboard: React.FC = () => {
                               <Calendar className="h-4 w-4 text-slate-650" />
                               <span>{new Date(user.createdAt).toLocaleDateString()}</span>
                             </td>
+                            <td className="p-4">
+                              {user.isActive === false ? (
+                                <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-500/10 text-slate-400 border border-slate-500/30">Inactive</span>
+                              ) : (
+                                <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>
+                              )}
+                            </td>
                             <td className="p-4 text-center">
                               {user.email === 'admin@jobbank.com' ? (
                                 <span className="text-[10px] text-slate-650 font-bold uppercase tracking-wider">PROTECTED</span>
@@ -457,6 +584,31 @@ const AdminDashboard: React.FC = () => {
                                     <Pencil className="h-4 w-4" />
                                     <span className="text-xs font-bold px-1">Edit</span>
                                   </Link>
+                                )}
+                                {user.role === 'Employer' && user.profileId && (
+                                  <button
+                                    onClick={() => openLinkCompany(user)}
+                                    className="p-2 text-sky-400 hover:text-sky-300 bg-sky-500/5 border border-sky-500/10 hover:border-sky-500/30 rounded-lg transition-all cursor-pointer inline-flex items-center space-x-1 whitespace-nowrap"
+                                    title="Link this employer to its official company (BOI common database)"
+                                  >
+                                    <Link2 className="h-4 w-4" />
+                                    <span className="text-xs font-bold px-1">Link Company</span>
+                                  </button>
+                                )}
+                                {user.role !== 'Admin' && (
+                                  <button
+                                    onClick={() => handleToggleUserStatus(user)}
+                                    disabled={statusUpdatingId === user.id}
+                                    className={`p-2 rounded-lg transition-all cursor-pointer inline-flex items-center space-x-1 border disabled:opacity-50 ${
+                                      user.isActive === false
+                                        ? 'text-emerald-500 hover:text-emerald-400 bg-emerald-500/5 border-emerald-500/10 hover:border-emerald-500/30'
+                                        : 'text-amber-500 hover:text-amber-400 bg-amber-500/5 border-amber-500/10 hover:border-amber-500/30'
+                                    }`}
+                                    title={user.isActive === false ? 'Activate Account' : 'Deactivate Account (keeps records)'}
+                                  >
+                                    {user.isActive === false ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+                                    <span className="text-xs font-bold px-1">{user.isActive === false ? 'Activate' : 'Deactivate'}</span>
+                                  </button>
                                 )}
                                 <button
                                   onClick={() => handleDeleteUser(user.id, user.email)}
@@ -520,7 +672,16 @@ const AdminDashboard: React.FC = () => {
                       ) : (
                         filteredSeekers.map((seeker) => (
                           <tr key={seeker.id} className="hover:bg-slate-900/30 transition-colors">
-                            <td className="p-4 font-mono text-xs text-purple-400">{seeker.refNo || '—'}</td>
+                            <td className="p-4">
+                              <span className="block font-mono text-xs text-purple-400">{seeker.refNo || '—'}</span>
+                              {seeker.refNo && (
+                                seeker.refNoValid ? (
+                                  <span className="inline-flex mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Valid today</span>
+                                ) : (
+                                  <span className="inline-flex mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-500/10 text-slate-400 border border-slate-500/30">Expired</span>
+                                )
+                              )}
+                            </td>
                             <td className="p-4">
                               <div className="flex flex-col">
                                 <span className="font-semibold text-slate-200">
@@ -540,7 +701,7 @@ const AdminDashboard: React.FC = () => {
                             <td className="p-4">
                               {seeker.applicationStatus ? (
                                 <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${statusBadgeClass[seeker.applicationStatus]}`}>
-                                  {seeker.applicationStatus}
+                                  {statusLabel[seeker.applicationStatus] ?? seeker.applicationStatus}
                                 </span>
                               ) : (
                                 <span className="text-xs text-slate-500">Not assigned</span>
@@ -573,6 +734,26 @@ const AdminDashboard: React.FC = () => {
                                   <Pencil className="h-4 w-4" />
                                   <span className="text-xs font-bold px-1">View / Edit</span>
                                 </Link>
+                                {!seeker.refNoValid && seeker.applicationStatus === 'Accepted' && (
+                                  <span
+                                    className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 border border-slate-700/60 rounded-lg whitespace-nowrap cursor-not-allowed"
+                                    title="This job seeker has been hired, so a new reference number cannot be issued."
+                                  >
+                                    Hired · No re-issue
+                                  </span>
+                                )}
+                                {!seeker.refNoValid && seeker.applicationStatus !== 'Accepted' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReissueRefNo(seeker)}
+                                    disabled={reissuingId === seeker.id}
+                                    className="p-2 text-emerald-400 hover:text-emerald-300 bg-emerald-500/5 border border-emerald-500/10 hover:border-emerald-500/30 rounded-lg transition-all inline-flex items-center space-x-1 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                                    title="Issue a new reference number for today's visit"
+                                  >
+                                    <RefreshCw className={`h-4 w-4 ${reissuingId === seeker.id ? 'animate-spin' : ''}`} />
+                                    <span className="text-xs font-bold px-1">Re-issue Ref No</span>
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -589,7 +770,7 @@ const AdminDashboard: React.FC = () => {
           {activeTab === 'pool' && (
             <CandidatePool
               candidates={pool}
-              vacancies={jobs.filter((j) => j.isActive)}
+              vacancies={jobs.filter((j) => j.isActive && (j.remainingPositions ?? 1) > 0)}
               onAssigned={refreshUsersAndStats}
             />
           )}
@@ -694,11 +875,171 @@ const AdminDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* TAB: JOB VACANCIES CARD VIEW */}
+          {activeTab === 'vacancies' && (
+            <div className="space-y-5">
+              {/* Header row: search + summary */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="relative max-w-md w-full">
+                  <Search className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
+                  <input
+                    type="text"
+                    value={vacancySearch}
+                    onChange={(e) => setVacancySearch(e.target.value)}
+                    placeholder="Search by title, company, location, or category..."
+                    className="w-full bg-slate-900/60 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all text-sm font-medium"
+                  />
+                </div>
+                <span className="text-xs text-slate-500 font-semibold shrink-0">
+                  {filteredVacancies.length} active {filteredVacancies.length === 1 ? 'vacancy' : 'vacancies'}
+                </span>
+              </div>
+
+              {/* Vacancy Cards Grid */}
+              {filteredVacancies.length === 0 ? (
+                <div className="glass rounded-2xl p-16 text-center text-slate-500">
+                  No active vacancies match the search terms.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {filteredVacancies.map((job) => (
+                    <div
+                      key={job.id}
+                      className="glass rounded-2xl p-5 border border-slate-800 hover:border-indigo-500/40 transition-all flex flex-col gap-4 relative overflow-hidden"
+                    >
+                      {/* Decorative accent */}
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full filter blur-2xl pointer-events-none" />
+
+                      {/* Title + company */}
+                      <div className="flex items-start justify-between gap-2 relative z-10">
+                        <div>
+                          <h3 className="text-sm font-extrabold text-slate-100 leading-snug">{job.title}</h3>
+                          <div className="flex items-center space-x-1 mt-0.5">
+                            <Building2 className="h-3 w-3 text-slate-500 shrink-0" />
+                            <span className="text-xs text-slate-400 font-semibold truncate">{job.companyName}</span>
+                          </div>
+                        </div>
+                        <span className="inline-flex px-2 py-0.5 rounded text-[9px] uppercase font-extrabold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+                          {job.jobType}
+                        </span>
+                      </div>
+
+                      {/* Category badge */}
+                      <div className="relative z-10">
+                        <span className="inline-flex px-2 py-0.5 rounded text-[9px] uppercase font-extrabold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          {job.jobCategory || 'Uncategorised'}
+                        </span>
+                      </div>
+
+                      {/* Key Details */}
+                      <div className="relative z-10 space-y-2">
+                        {/* Location */}
+                        <div className="flex items-center space-x-2 bg-slate-950/40 rounded-lg px-3 py-2 border border-slate-800">
+                          <MapPin className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                          <div>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Location</p>
+                            <p className="text-xs text-slate-200 font-semibold mt-0.5">{job.location || '—'}</p>
+                          </div>
+                        </div>
+
+                        {/* Positions Available */}
+                        <div className="flex items-center space-x-2 bg-slate-950/40 rounded-lg px-3 py-2 border border-slate-800">
+                          <UsersRound className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+                          <div>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Positions Available</p>
+                            {(job.remainingPositions ?? job.positionsAvailable ?? 1) > 0 ? (
+                              <p className="text-xs font-extrabold mt-0.5">
+                                <span className="text-sky-300 text-sm">{job.remainingPositions ?? job.positionsAvailable ?? 1}</span>
+                                <span className="text-slate-400 ml-1">of {job.positionsAvailable ?? 1} {(job.positionsAvailable ?? 1) === 1 ? 'position' : 'positions'}</span>
+                              </p>
+                            ) : (
+                              <p className="text-xs font-extrabold mt-0.5 text-rose-400">All {job.positionsAvailable} filled</p>
+                            )}
+                            {(job.filledPositions ?? 0) > 0 && (
+                              <p className="text-[10px] text-emerald-400 font-semibold mt-0.5">{job.filledPositions} selected by employer</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Salary */}
+                        <div className="flex items-center space-x-2 bg-slate-950/40 rounded-lg px-3 py-2 border border-slate-800">
+                          <Banknote className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                          <div>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Salary Range</p>
+                            <p className="text-xs text-emerald-300 font-extrabold mt-0.5">{job.salaryRange || '—'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer: posted date */}
+                      <div className="relative z-10 flex items-center justify-between pt-1 border-t border-slate-800/60">
+                        <div className="flex items-center space-x-1 text-slate-500">
+                          <Calendar className="h-3 w-3" />
+                          <span className="text-[10px]">Posted {new Date(job.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+                          Active
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 4: USER REGISTRATION VIEW */}
           {activeTab === 'register' && (
             <UserRegistration onRegistered={refreshUsersAndStats} />
           )}
         </div>
+      )}
+
+      {linkingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="max-w-lg w-full glass p-8 rounded-3xl border border-slate-800 shadow-2xl">
+            <h3 className="text-xl font-extrabold text-slate-100 mb-1">Link Official Company</h3>
+            <p className="text-sm text-slate-400 mb-5">
+              Employer <span className="text-slate-200 font-semibold">{linkingUser.email}</span>
+              <br />
+              Current company name: <span className="text-slate-200 font-semibold">{linkingUser.profileName || '—'}</span>
+            </p>
+            <label className="text-xs font-semibold text-slate-400 block mb-1">Official company</label>
+            <CompanyPicker value={linkCompany?.name ?? ''} onChange={setLinkCompany} />
+            {linkCompany && (
+              <p className="mt-2 text-xs text-slate-400">
+                Zone: <span className="text-sky-300 font-semibold">{linkCompany.zone || 'No zone recorded'}</span>
+              </p>
+            )}
+            {linkError && <p className="mt-3 text-sm text-rose-400">{linkError}</p>}
+            <div className="flex space-x-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setLinkingUser(null)}
+                className="w-1/2 py-3 border border-slate-700 hover:bg-slate-800 rounded-xl text-sm font-bold text-slate-300 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveLinkCompany}
+                disabled={!linkCompany || linkSaving}
+                className="w-1/2 py-3 font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl disabled:opacity-50 cursor-pointer"
+              >
+                {linkSaving ? 'Saving...' : 'Link Company'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reissuedRefNo && (
+        <RegistrationSuccessModal
+          refNo={reissuedRefNo}
+          message="New reference number issued."
+          buttonLabel="Done"
+          onClose={() => setReissuedRefNo(null)}
+        />
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Lock, Mail, AlertTriangle, ArrowRight, User, Building, IdCard } from 'lucide-react';
 import api from '../services/api';
+import { NIC_MAX_LENGTH } from '../utils/nicValidation';
 
 const Login: React.FC = () => {
   const [identifier, setIdentifier] = useState('');
@@ -21,8 +22,9 @@ const Login: React.FC = () => {
       return;
     }
 
-    if (loginMode === 'JobSeeker' && identifier.length !== 10) {
-      setError('NIC number must be exactly 10 characters.');
+    // Loose check on purpose: accounts created before the NIC format rule may not match it exactly
+    if (loginMode === 'JobSeeker' && identifier.length !== 10 && identifier.length !== 12) {
+      setError('Please enter your 10-character (old) or 12-digit (new) NIC number.');
       return;
     }
 
@@ -132,18 +134,15 @@ const Login: React.FC = () => {
                     name="nic"
                     type="text"
                     required
-                    maxLength={10}
+                    maxLength={NIC_MAX_LENGTH}
                     value={identifier}
-                    onChange={(e) => {
-                      const val = e.target.value.slice(0, 10);
-                      setIdentifier(val);
-                    }}
+                    onChange={(e) => setIdentifier(e.target.value.trim().toUpperCase().slice(0, NIC_MAX_LENGTH))}
                     className="block w-full pl-10 pr-3 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all duration-200"
-                    placeholder="Enter 10-character NIC"
+                    placeholder="e.g. 951480234V or 199514802345"
                   />
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  {identifier.length}/10 characters
+                  Old (9 digits + V/X) or new (12 digits) NIC
                 </p>
               </div>
             ) : (

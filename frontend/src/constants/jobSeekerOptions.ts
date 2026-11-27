@@ -48,11 +48,23 @@ export const experienceList = [
 ];
 
 export const jobCategoriesList = [
-  'Trainee Machine Operator',
-  'Production Assistance',
-  'Cleaner',
-  'Machine Operator',
   'Electrician',
-  'Packing Worker',
+  'Plumber',
+  'Machine Operator',
+  'Welder',
+  'Production',
+  'Quality Assurance',
+  'Assembly',
+  'Packaging',
+  'Technician',
+  'Maintenance',
+  'Finance',
+  'Administration',
+  'Engineering',
+  'IT',
+  'Marketing',
+  'Logistics',
+  'HR',
+  'Managerial',
   'Other'
 ];

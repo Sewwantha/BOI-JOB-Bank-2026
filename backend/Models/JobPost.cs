@@ -26,6 +26,9 @@ namespace JobBank.Api.Models
         public string Location { get; set; } = string.Empty;
         public string SalaryRange { get; set; } = string.Empty;
 
+        // Number of open positions for this vacancy (default 1)
+        public int PositionsAvailable { get; set; } = 1;
+
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public JobType JobType { get; set; }
         public bool IsActive { get; set; } = true;

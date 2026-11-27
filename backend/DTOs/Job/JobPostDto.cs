@@ -15,6 +15,9 @@ namespace JobBank.Api.DTOs.Job
         public string JobCategory { get; set; } = string.Empty;
         public string Location { get; set; } = string.Empty;
         public string SalaryRange { get; set; } = string.Empty;
+        public int PositionsAvailable { get; set; } = 1;  // total openings set by the employer
+        public int FilledPositions { get; set; }           // applicants the employer selected (Accepted)
+        public int RemainingPositions => Math.Max(PositionsAvailable - FilledPositions, 0);
         public JobType JobType { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }

@@ -14,6 +14,9 @@ interface Job {
   location: string;
   salaryRange: string;
   jobType: string;
+  positionsAvailable?: number;
+  filledPositions?: number;
+  remainingPositions?: number;
   isActive: boolean;
   createdAt: string;
 }
@@ -394,6 +397,18 @@ const EmployerDashboard: React.FC = () => {
                               <div className="flex items-center space-x-2">
                                 <MapPin className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                                 <span>{job.location}</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Users2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                                {(job.remainingPositions ?? job.positionsAvailable ?? 1) > 0 ? (
+                                  <span>
+                                    <span className="text-sky-400 font-semibold">{job.remainingPositions ?? job.positionsAvailable ?? 1}</span>
+                                    {' '}of {job.positionsAvailable ?? 1} {(job.positionsAvailable ?? 1) === 1 ? 'position' : 'positions'} available
+                                    {(job.filledPositions ?? 0) > 0 && <span className="text-emerald-400"> · {job.filledPositions} selected</span>}
+                                  </span>
+                                ) : (
+                                  <span className="text-rose-400 font-semibold">All {job.positionsAvailable} positions filled</span>
+                                )}
                               </div>
                               <div className="flex items-center space-x-2 mt-1">
                                 <span className="text-emerald-400 font-semibold">{job.salaryRange}</span>

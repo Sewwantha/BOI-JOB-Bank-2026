@@ -4,8 +4,14 @@ import {
   User, Building, IdCard, Mail, Lock, Phone, MapPin, Globe,
   GraduationCap, UserPlus, CheckCircle, AlertTriangle, Briefcase, DollarSign
 } from 'lucide-react';
+import CompanyPicker from '../../components/CompanyPicker';
 import api from '../../services/api';
+import { sanitizeFullName, isValidFullName, FULL_NAME_ERROR } from '../../utils/nameValidation';
+import { isValidDob, getMinDob, getMaxDob, DOB_ERROR } from '../../utils/dobValidation';
+import { sanitizePhone, isValidPhone, PHONE_LENGTH, MOBILE_ERROR, LANDLINE_ERROR } from '../../utils/phoneValidation';
+import { sanitizeNic, isValidNic, decodeNic, NIC_MAX_LENGTH, NIC_ERROR } from '../../utils/nicValidation';
 import RegistrationSuccessModal from '../../components/RegistrationSuccessModal';
+import NicScanPanel, { type NicScanResult } from './NicScanPanel';
 import {
   eduQualificationsList,
   vocationalTrainingList,
@@ -21,6 +27,8 @@ interface Vacancy {
   location: string;
   salaryRange: string;
   jobType: string;
+  positionsAvailable?: number;
+  remainingPositions?: number;
 }
 
 const jobTypeLabels: Record<string, string> = {
@@ -131,6 +139,64 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
 
   const updateSeeker = (field: keyof typeof initialSeeker, value: string) =>
     setSeeker((prev) => ({ ...prev, [field]: value }));
+  // Typing a NIC also fills date of birth and gender (encoded in the number) when they're still empty
+  const changeNic = (value: string) => {
+    const nicNumber = sanitizeNic(value);
+    const decoded = decodeNic(nicNumber);
+    setSeeker((prev) => ({
+      ...prev,
+      nicNumber,
+      dateOfBirth: prev.dateOfBirth || decoded?.dateOfBirth || '',
+      gender: prev.gender || decoded?.gender || '',
+    }));
+  };
+
+  // Applies the fields read from a scanned NIC; returns what was filled for the scan panel to show
+  const applyNicScan = (scan: NicScanResult) => {
+    const filled: string[] = [];
+    const notes: string[] = [...(scan.warnings || [])];
+    const next = { ...seeker };
+
+    const nic = sanitizeNic(scan.nicNumber || '');
+    const decoded = isValidNic(nic) ? decodeNic(nic) : null;
+    if (isValidNic(nic)) {
+      next.nicNumber = nic;
+      filled.push('NIC number');
+    }
+
+    const name = sanitizeFullName(scan.fullName || '').trim();
+    if (name) {
+      next.fullName = name;
+      filled.push('full name');
+    }
+
+    // The NIC number is the reliable source; the printed date/sex are only a fallback
+    if (decoded && scan.dateOfBirth && scan.dateOfBirth !== decoded.dateOfBirth) {
+      notes.push(`Printed date of birth (${scan.dateOfBirth}) differs from the NIC number (${decoded.dateOfBirth}); the NIC number was used.`);
+    }
+    const dob = decoded?.dateOfBirth || scan.dateOfBirth;
+    if (dob) {
+      next.dateOfBirth = dob;
+      filled.push('date of birth');
+      if (!isValidDob(dob)) notes.push(DOB_ERROR);
+    }
+
+    const gender = decoded?.gender || scan.gender;
+    if (gender === 'Male' || gender === 'Female') {
+      next.gender = gender;
+      filled.push('gender');
+    }
+
+    if (scan.address?.trim()) {
+      next.address = scan.address.trim();
+      filled.push('address');
+    }
+
+    setSeeker(next);
+    setMessage(null);
+    return { filled, notes };
+  };
+
   const updateEmployer = (field: keyof typeof initialEmployer, value: string) =>
     setEmployer((prev) => ({ ...prev, [field]: value }));
 
@@ -149,13 +215,17 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
 
   const validate = (): string | null => {
     if (role === 'JobSeeker') {
-      if (seeker.nicNumber.trim().length !== 10) return 'NIC number must be exactly 10 characters.';
+      if (!isValidNic(seeker.nicNumber)) return NIC_ERROR;
       if (!seeker.fullName.trim()) return 'Full name is required.';
+      if (!isValidFullName(seeker.fullName)) return FULL_NAME_ERROR;
+      if (seeker.dateOfBirth && !isValidDob(seeker.dateOfBirth)) return DOB_ERROR;
       if (!seeker.gender) return 'Gender is required.';
       if (!seeker.mobileNumber.trim()) return 'Mobile number is required.';
+      if (!isValidPhone(seeker.mobileNumber)) return MOBILE_ERROR;
+      if (seeker.landlineNumber.trim() && !isValidPhone(seeker.landlineNumber)) return LANDLINE_ERROR;
     } else {
       if (!employer.email.trim()) return 'Email is required.';
-      if (!employer.companyName.trim()) return 'Company name is required.';
+      if (!employer.companyName.trim()) return 'Please select the company from the official company list.';
     }
     if (password.length < 6) return 'Password must be at least 6 characters.';
     if (password !== confirmPassword) return 'Passwords do not match.';
@@ -270,6 +340,8 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
       <form onSubmit={handleSubmit} className="glass p-6 sm:p-8 rounded-3xl space-y-8">
         {role === 'JobSeeker' ? (
           <>
+            <NicScanPanel onScanned={applyNicScan} />
+
             {/* Personal information */}
             <div>
               <SectionTitle icon={<User className="h-4 w-4" />} title="Personal Information" />
@@ -279,19 +351,21 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
                   <IconInput
                     icon={<IdCard className="h-4 w-4" />}
                     type="text"
-                    maxLength={10}
+                    maxLength={NIC_MAX_LENGTH}
                     value={seeker.nicNumber}
-                    onChange={(e) => updateSeeker('nicNumber', e.target.value.slice(0, 10))}
-                    placeholder="Enter 10-character NIC"
+                    onChange={(e) => changeNic(e.target.value)}
+                    placeholder="e.g. 951480234V or 199514802345"
                   />
-                  <p className="mt-1 text-xs text-slate-500">{seeker.nicNumber.length}/10 characters · used as the login ID</p>
+                  <p className="mt-1 text-xs text-slate-500">Old (9 digits + V/X) or new (12 digits) format · used as the login ID</p>
                 </div>
                 <div>
                   <label className={labelClass}>Full Name <Required /></label>
                   <input
                     type="text"
                     value={seeker.fullName}
-                    onChange={(e) => updateSeeker('fullName', e.target.value)}
+                    onChange={(e) => updateSeeker('fullName', sanitizeFullName(e.target.value))}
+                    pattern="[A-Za-z][A-Za-z.]*( [A-Za-z.]+)*"
+                    title="Alphabetic characters, dots and spaces only"
                     className={inputClass}
                     placeholder="e.g. Nimal Perera"
                   />
@@ -302,6 +376,8 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
                     type="date"
                     value={seeker.dateOfBirth}
                     onChange={(e) => updateSeeker('dateOfBirth', e.target.value)}
+                    min={getMinDob()}
+                    max={getMaxDob()}
                     className={inputClass}
                   />
                 </div>
@@ -335,8 +411,10 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
                   <IconInput
                     icon={<Phone className="h-4 w-4" />}
                     type="tel"
+                    inputMode="numeric"
+                    maxLength={PHONE_LENGTH}
                     value={seeker.mobileNumber}
-                    onChange={(e) => updateSeeker('mobileNumber', e.target.value)}
+                    onChange={(e) => updateSeeker('mobileNumber', sanitizePhone(e.target.value))}
                     placeholder="07XXXXXXXX"
                   />
                 </div>
@@ -345,8 +423,10 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
                   <IconInput
                     icon={<Phone className="h-4 w-4" />}
                     type="tel"
+                    inputMode="numeric"
+                    maxLength={PHONE_LENGTH}
                     value={seeker.landlineNumber}
-                    onChange={(e) => updateSeeker('landlineNumber', e.target.value)}
+                    onChange={(e) => updateSeeker('landlineNumber', sanitizePhone(e.target.value))}
                     placeholder="0XXXXXXXXX"
                   />
                 </div>
@@ -361,7 +441,7 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Available Job Locations (Zone)</label>
+                  <label className={labelClass}>Available Jobs Location in Zone</label>
                   <SelectInput value={seeker.preferredZone} onChange={selectZone} options={zones} placeholder={zonesLoading ? 'Loading zones...' : zones.length ? 'Select Zone' : 'No zones for your location'} />
                 </div>
                 {seeker.preferredZone && (
@@ -408,6 +488,11 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
                               <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20">
                                 {jobTypeLabels[job.jobType] ?? job.jobType}
                               </span>
+                              {job.positionsAvailable != null && (
+                                <span className="inline-block mt-1 ml-1.5 px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/20">
+                                  {job.remainingPositions ?? job.positionsAvailable} of {job.positionsAvailable} positions open
+                                </span>
+                              )}
                             </div>
                           </button>
                           );
@@ -491,12 +576,9 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
               </div>
               <div>
                 <label className={labelClass}>Company Name <Required /></label>
-                <input
-                  type="text"
+                <CompanyPicker
                   value={employer.companyName}
-                  onChange={(e) => updateEmployer('companyName', e.target.value)}
-                  className={inputClass}
-                  placeholder="Company (Pvt) Ltd"
+                  onChange={(c) => updateEmployer('companyName', c?.name ?? '')}
                 />
               </div>
               <div>

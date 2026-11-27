@@ -33,6 +33,9 @@ builder.Services.AddDbContext<JobBankDbContext>(options =>
 // Shared "common" database: admin users (UsrUser) and zones (project)
 builder.Services.AddScoped<CommonDbService>();
 
+// "Commonwtc" database: Preferred Job Locations (Zone) for job seekers (Location table)
+builder.Services.AddScoped<LocationDbService>();
+
 // Weekly candidate pool / job vacancy matching
 builder.Services.AddHostedService<WeeklyMatchingService>();
 
@@ -57,6 +60,28 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtSettings["Audience"] ?? "JobBankClient",
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ClockSkew = TimeSpan.Zero
+    };
+
+    // A deactivated (or deleted) employer / job seeker is signed out on their next request,
+    // even if their token has not expired. Admin tokens use a UserCode, not a user id, so they are skipped.
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async ctx =>
+        {
+            var sub = ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                      ?? ctx.Principal?.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(sub, out var userId))
+            {
+                return;
+            }
+
+            var db = ctx.HttpContext.RequestServices.GetRequiredService<JobBankDbContext>();
+            var isActive = await db.Users.Where(u => u.Id == userId).Select(u => (bool?)u.IsActive).FirstOrDefaultAsync();
+            if (isActive != true)
+            {
+                ctx.Fail("This account is deactivated or no longer exists.");
+            }
+        }
     };
 });
 

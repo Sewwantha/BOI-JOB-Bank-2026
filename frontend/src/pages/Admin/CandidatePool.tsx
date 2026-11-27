@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Search, Phone, Calendar, Pencil, UserCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
-import { type ApplicationStatus, statusBadgeClass } from '../../constants/applicationStatus';
+import { type ApplicationStatus, statusBadgeClass, statusLabel } from '../../constants/applicationStatus';
 
 export interface PoolCandidate {
   id: string;
@@ -28,6 +28,7 @@ export interface PoolVacancy {
   id: string;
   title: string;
   companyName: string;
+  zone?: string; // zone where the vacancy is available (from the common database)
 }
 
 interface CandidatePoolProps {
@@ -68,7 +69,7 @@ const CandidatePool: React.FC<CandidatePoolProps> = ({ candidates, vacancies, on
       <div>
         <h3 className="text-xl font-bold text-slate-100">Candidate Pool</h3>
         <p className="text-slate-400 text-sm mt-1">
-          Candidates not yet accepted by a company: registered without a vacancy, still under company review, or rejected
+          Candidates not yet hired by a company: registered without a vacancy, still under company review, or rejected
         </p>
       </div>
 
@@ -129,7 +130,7 @@ const CandidatePool: React.FC<CandidatePoolProps> = ({ candidates, vacancies, on
                       {c.latestApplication ? (
                         <div className="flex flex-col items-start space-y-1 max-w-[220px]">
                           <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${statusBadgeClass[c.latestApplication.status]}`}>
-                            {c.latestApplication.status}
+                            {statusLabel[c.latestApplication.status] ?? c.latestApplication.status}
                           </span>
                           <span className="text-xs text-slate-400">{c.latestApplication.jobTitle} at {c.latestApplication.companyName}</span>
                           {c.latestApplication.status === 'Rejected' && c.latestApplication.rejectionRemark && (
@@ -160,7 +161,7 @@ const CandidatePool: React.FC<CandidatePoolProps> = ({ candidates, vacancies, on
                           </option>
                           {vacancies.map((v) => (
                             <option key={v.id} value={v.id} className="bg-slate-950">
-                              {v.title} — {v.companyName}
+                              {v.title} — {v.zone ? `${v.zone} | ` : ''}{v.companyName}
                             </option>
                           ))}
                         </select>

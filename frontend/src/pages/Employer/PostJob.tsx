@@ -1,21 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { PlusCircle, Edit3, CheckCircle, AlertCircle, MapPin, Banknote } from 'lucide-react';
+import { PlusCircle, Edit3, CheckCircle, AlertCircle, MapPin, Banknote, FileText, Upload, Users } from 'lucide-react';
 import api from '../../services/api';
 import { jobCategoriesList } from '../../constants/jobSeekerOptions';
+import BulkJobUpload from './BulkJobUpload';
 
 const PostJob: React.FC = () => {
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('editId');
 
   const navigate = useNavigate();
+  // 'single' = one-vacancy form, 'bulk' = CSV upload (not offered when editing)
+  const [mode, setMode] = useState<'single' | 'bulk'>(searchParams.get('mode') === 'bulk' ? 'bulk' : 'single');
+  const isBulk = !editId && mode === 'bulk';
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [requirements, setRequirements] = useState('');
   const [location, setLocation] = useState('');
   const [salaryRange, setSalaryRange] = useState('');
-  const [jobType, setJobType] = useState<number>(0); // Enums: FullTime=0, Contract=2, Internship=4
+  // Enums: FullTime=0, Contract=2, Internship=4. Empty until the employer picks one (mandatory).
+  const [jobType, setJobType] = useState<number | ''>('');
+  // Number of openings for this position (kept as string so the field can be cleared while typing)
+  const [positionsAvailable, setPositionsAvailable] = useState<string>('1');
   // Same list job seekers choose from, so the weekly matching can compare them directly
   const [category, setCategory] = useState('');
   const [otherCategory, setOtherCategory] = useState('');
@@ -36,6 +43,7 @@ const PostJob: React.FC = () => {
           setRequirements(res.data.requirements);
           setLocation(res.data.location);
           setSalaryRange(res.data.salaryRange);
+          setPositionsAvailable(String(res.data.positionsAvailable ?? 1));
 
           // Custom categories are stored as "Other: ..."
           const savedCategory: string = res.data.jobCategory || '';
@@ -65,21 +73,36 @@ const PostJob: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const missing: string[] = [];
+    if (!title.trim()) missing.push('Job Title');
+    if (jobType === '') missing.push('Job Type');
+    if (!salaryRange.trim()) missing.push('Salary Range');
+    if (!location.trim()) missing.push('Location');
+    if (missing.length) {
+      setMessage({ type: 'error', text: `Please fill in the mandatory field(s): ${missing.join(', ')}.` });
+      return;
+    }
     if (!category || (category === 'Other' && !otherCategory.trim())) {
       setMessage({ type: 'error', text: 'Please select a job category.' });
+      return;
+    }
+    const positions = parseInt(positionsAvailable, 10);
+    if (!Number.isInteger(positions) || positions < 1) {
+      setMessage({ type: 'error', text: 'Available positions must be a whole number of at least 1.' });
       return;
     }
     setSaving(true);
     setMessage(null);
 
     const payload = {
-      title,
+      title: title.trim(),
       description,
       requirements,
       jobCategory: category === 'Other' ? `Other: ${otherCategory.trim()}` : category,
-      location,
-      salaryRange,
+      location: location.trim(),
+      salaryRange: salaryRange.trim(),
       jobType,
+      positionsAvailable: positions,
     };
 
     try {
@@ -120,10 +143,36 @@ const PostJob: React.FC = () => {
             {editId ? <Edit3 className="h-6 w-6" /> : <PlusCircle className="h-6 w-6" />}
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-100">{editId ? 'Edit Job Posting' : 'Post a New Job'}</h1>
-            <p className="text-slate-400 text-xs mt-0.5">Advertise open positions and attract top applicants</p>
+            <h1 className="text-2xl font-extrabold text-slate-100">
+              {editId ? 'Edit Job Posting' : isBulk ? 'Upload Bulk Vacancies' : 'Post a New Job'}
+            </h1>
+            <p className="text-slate-400 text-xs mt-0.5">
+              {isBulk ? 'Post many vacancies at once from a CSV file' : 'Advertise open positions and attract top applicants'}
+            </p>
           </div>
         </div>
+
+        {!editId && (
+          <div className="grid grid-cols-2 gap-2 p-1 mb-8 bg-slate-900/60 border border-slate-800 rounded-xl">
+            {([
+              { key: 'single', label: 'Single Vacancy', icon: <FileText className="h-4 w-4" /> },
+              { key: 'bulk', label: 'Bulk Upload (CSV)', icon: <Upload className="h-4 w-4" /> },
+            ] as const).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => { setMode(t.key); setMessage(null); }}
+                className={`flex items-center justify-center space-x-2 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 cursor-pointer ${
+                  mode === t.key ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {t.icon}<span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isBulk ? <BulkJobUpload /> : (<>
 
         {message && (
           <div
@@ -145,7 +194,9 @@ const PostJob: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Job Title */}
           <div>
-            <label className="text-xs font-semibold text-slate-400 block mb-1">Job Title</label>
+            <label className="text-xs font-semibold text-slate-400 block mb-1">
+              Job Title <span className="text-rose-500 font-bold">*</span>
+            </label>
             <input
               type="text"
               required
@@ -186,7 +237,7 @@ const PostJob: React.FC = () => {
                   value={otherCategory}
                   onChange={(e) => setOtherCategory(e.target.value)}
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm"
-                  placeholder="e.g. Welder"
+                  placeholder="e.g. Security Guard"
                 />
               </div>
             )}
@@ -195,19 +246,25 @@ const PostJob: React.FC = () => {
           {/* Job Type & Salary Range */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="text-xs font-semibold text-slate-400 block mb-1">Job Type</label>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">
+                Job Type <span className="text-rose-500 font-bold">*</span>
+              </label>
               <select
+                required
                 value={jobType}
-                onChange={(e) => setJobType(parseInt(e.target.value))}
+                onChange={(e) => setJobType(e.target.value === '' ? '' : parseInt(e.target.value))}
                 className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm cursor-pointer"
               >
+                <option value="" disabled>Select Job Type</option>
                 <option value={0}>Full Time</option>
                 <option value={2}>Contract</option>
                 <option value={4}>Internship</option>
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-400 block mb-1">Salary Range</label>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">
+                Salary Range <span className="text-rose-500 font-bold">*</span>
+              </label>
               <div className="relative">
                 <Banknote className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
                 <input
@@ -222,19 +279,42 @@ const PostJob: React.FC = () => {
             </div>
           </div>
 
-          {/* Location */}
-          <div>
-            <label className="text-xs font-semibold text-slate-400 block mb-1">Location</label>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
-              <input
-                type="text"
-                required
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm"
-                placeholder="e.g. Redmond, WA or Remote"
-              />
+          {/* Location & Available Positions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">
+                Location <span className="text-rose-500 font-bold">*</span>
+              </label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
+                <input
+                  type="text"
+                  required
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm"
+                  placeholder="e.g. Redmond, WA or Remote"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">
+                Available Positions <span className="text-rose-500 font-bold">*</span>
+              </label>
+              <div className="relative">
+                <Users className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  step={1}
+                  value={positionsAvailable}
+                  onChange={(e) => setPositionsAvailable(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm"
+                  placeholder="e.g. 5"
+                />
+              </div>
+              <p className="mt-1 text-xs text-slate-500">How many people you want to hire for this position</p>
             </div>
           </div>
 
@@ -288,6 +368,7 @@ const PostJob: React.FC = () => {
             </button>
           </div>
         </form>
+        </>)}
       </div>
     </div>
   );

@@ -1,5 +1,9 @@
+using System.Collections.Generic;
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
@@ -20,14 +24,115 @@ namespace JobBank.Api.Controllers
     {
         private readonly JobBankDbContext _context;
         private readonly CommonDbService _commonDb;
+        private readonly IWebHostEnvironment _env;
+        private readonly IConfiguration _config;
 
-        public AdminController(JobBankDbContext context, CommonDbService commonDb)
+        public AdminController(JobBankDbContext context, CommonDbService commonDb, IWebHostEnvironment env, IConfiguration config)
         {
             _context = context;
             _commonDb = commonDb;
+            _env = env;
+            _config = config;
         }
 
-        // Available Job Locations (Zone) for the logged-in admin's location (project names from the common database)
+        private static readonly string[] NicScanExtensions = { ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp", ".pdf" };
+        private const long MaxNicScanBytes = 10 * 1024 * 1024;
+
+        // Reads a scanned NIC (front, and optionally back) with OCR (parse_nic.py) and returns the
+        // fields found, so the registration form can be pre-filled. Nothing is saved.
+        [HttpPost("scan-nic")]
+        [RequestSizeLimit(2 * MaxNicScanBytes + 1024 * 1024)]
+        public async Task<IActionResult> ScanNic(IFormFile? front, IFormFile? back)
+        {
+            if (front == null || front.Length == 0)
+            {
+                return BadRequest(new { Message = "Please choose the scanned NIC file." });
+            }
+
+            var files = back != null && back.Length > 0 ? new[] { front, back } : new[] { front };
+            foreach (var f in files)
+            {
+                var ext = Path.GetExtension(f.FileName).ToLowerInvariant();
+                if (!NicScanExtensions.Contains(ext))
+                {
+                    return BadRequest(new { Message = "NIC scans must be an image (JPG, PNG, BMP, TIFF, WEBP) or a PDF." });
+                }
+                if (f.Length > MaxNicScanBytes)
+                {
+                    return BadRequest(new { Message = "Each NIC scan must be 10 MB or smaller." });
+                }
+            }
+
+            var tempPaths = new List<string>();
+            try
+            {
+                foreach (var f in files)
+                {
+                    // Keep the extension: parse_nic.py picks the reader based on it
+                    var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + Path.GetExtension(f.FileName).ToLowerInvariant());
+                    await using (var stream = new FileStream(path, FileMode.Create))
+                    {
+                        await f.CopyToAsync(stream);
+                    }
+                    tempPaths.Add(path);
+                }
+
+                var psi = new ProcessStartInfo
+                {
+                    // Under IIS the app pool may not have python on its PATH; set Python:Path to the full python.exe path
+                    FileName = _config["Python:Path"] ?? "python",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                psi.ArgumentList.Add(Path.Combine(_env.ContentRootPath, "parse_nic.py"));
+                foreach (var path in tempPaths) psi.ArgumentList.Add(path);
+                psi.Environment["PYTHONIOENCODING"] = "utf-8";
+                psi.StandardOutputEncoding = System.Text.Encoding.UTF8;
+
+                using var process = Process.Start(psi);
+                if (process == null)
+                {
+                    return StatusCode(500, new { Message = "Failed to start the NIC scan reader." });
+                }
+
+                var outputTask = process.StandardOutput.ReadToEndAsync();
+                var errorTask = process.StandardError.ReadToEndAsync();
+                using var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(90));
+                try
+                {
+                    await process.WaitForExitAsync(timeout.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
+                    return StatusCode(504, new { Message = "Reading the NIC scan took too long. Please try a clearer or smaller image." });
+                }
+
+                var output = await outputTask;
+                var error = await errorTask;
+                if (process.ExitCode != 0)
+                {
+                    return StatusCode(500, new { Message = "Could not read the NIC scan.", Details = error });
+                }
+
+                return Content(output, "application/json");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = "An error occurred while reading the NIC scan.", Details = ex.Message });
+            }
+            finally
+            {
+                foreach (var path in tempPaths)
+                {
+                    try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); } catch { /* ignore */ }
+                }
+            }
+        }
+
+        // Preferred Job Locations (Zone) for the logged-in admin's location (project names from the common database)
         [HttpGet("zones")]
         public IActionResult GetZones()
         {
@@ -59,6 +164,14 @@ namespace JobBank.Api.Controllers
             }
         }
 
+        // A vacancy is full when the employer has selected (Accepted) as many applicants as it has positions
+        private bool IsVacancyFull(Guid jobPostId)
+        {
+            var total = _context.JobPosts.Where(j => j.Id == jobPostId).Select(j => j.PositionsAvailable).FirstOrDefault();
+            var filled = _context.JobApplications.Count(a => a.JobPostId == jobPostId && a.Status == ApplicationStatus.Accepted);
+            return filled >= total;
+        }
+
         // Active job vacancies of the company selected as the preferred zone (matched by company name)
         [HttpGet("company-vacancies")]
         public IActionResult GetCompanyVacancies([FromQuery] string companyName)
@@ -72,6 +185,8 @@ namespace JobBank.Api.Controllers
             var vacancies = _context.JobPosts
                 .Include(j => j.CompanyProfile)
                 .Where(j => j.IsActive && j.CompanyProfile != null && j.CompanyProfile.CompanyName.Trim().ToUpper() == nameNormalized)
+                // Only vacancies that still have open positions can be assigned
+                .Where(j => j.Applications.Count(a => a.Status == ApplicationStatus.Accepted) < j.PositionsAvailable)
                 .OrderByDescending(j => j.CreatedAt)
                 .Select(j => new JobPostDto
                 {
@@ -85,6 +200,8 @@ namespace JobBank.Api.Controllers
                     JobCategory = j.JobCategory,
                     Location = j.Location,
                     SalaryRange = j.SalaryRange,
+                    PositionsAvailable = j.PositionsAvailable,
+                    FilledPositions = j.Applications.Count(a => a.Status == ApplicationStatus.Accepted),
                     JobType = j.JobType,
                     IsActive = j.IsActive,
                     CreatedAt = j.CreatedAt
@@ -103,6 +220,8 @@ namespace JobBank.Api.Controllers
             var totalJobPosts = _context.JobPosts.Count();
             var activeJobPosts = _context.JobPosts.Count(j => j.IsActive);
             var totalApplications = _context.JobApplications.Count();
+            var acceptedCandidates = _context.JobApplications.Count(a => a.Status == ApplicationStatus.Accepted);
+            var rejectedCandidates = _context.JobApplications.Count(a => a.Status == ApplicationStatus.Rejected);
 
             return Ok(new AdminStatsDto
             {
@@ -111,7 +230,9 @@ namespace JobBank.Api.Controllers
                 TotalJobSeekers = totalJobSeekers,
                 TotalJobPosts = totalJobPosts,
                 ActiveJobPosts = activeJobPosts,
-                TotalApplications = totalApplications
+                TotalApplications = totalApplications,
+                AcceptedCandidates = acceptedCandidates,
+                RejectedCandidates = rejectedCandidates
             });
         }
 
@@ -128,6 +249,7 @@ namespace JobBank.Api.Controllers
                     u.Email,
                     u.Role,
                     u.CreatedAt,
+                    u.IsActive,
                     ProfileName = u.Role == UserRole.Employer ? u.CompanyProfile!.CompanyName 
                                 : u.Role == UserRole.JobSeeker ? $"{u.JobSeekerProfile!.FirstName} {u.JobSeekerProfile.LastName}" 
                                 : "Administrator",
@@ -161,10 +283,10 @@ namespace JobBank.Api.Controllers
 
             if (dto.Role == UserRole.JobSeeker)
             {
-                var nicTrimmed = (dto.NicNumber ?? string.Empty).Trim();
-                if (nicTrimmed.Length != 10)
+                var nicTrimmed = NicHelper.Normalize(dto.NicNumber);
+                if (!NicHelper.IsValid(nicTrimmed))
                 {
-                    return BadRequest(new { Message = "NIC number must be exactly 10 characters." });
+                    return BadRequest(new { Message = NicHelper.ErrorMessage });
                 }
 
                 if (_context.Users.Any(u => u.NicNumber == nicTrimmed))
@@ -187,6 +309,11 @@ namespace JobBank.Api.Controllers
                     return BadRequest(new { Message = "Selected job vacancy is no longer available." });
                 }
 
+                if (dto.JobPostId.HasValue && IsVacancyFull(dto.JobPostId.Value))
+                {
+                    return BadRequest(new { Message = "All positions for the selected job vacancy are already filled." });
+                }
+
                 user.NicNumber = nicTrimmed;
                 user.Email = nicTrimmed; // Same NIC-as-email convention as self-registration
             }
@@ -207,6 +334,22 @@ namespace JobBank.Api.Controllers
                 {
                     return BadRequest(new { Message = "Company name is required." });
                 }
+
+                // Must be an official company name, so the vacancy zone can be found
+                OfficialCompany? official;
+                try
+                {
+                    official = _commonDb.FindCompany(dto.CompanyName);
+                }
+                catch (SqlException)
+                {
+                    return StatusCode(503, new { Message = "Cannot connect to the company database. Please try again later." });
+                }
+                if (official == null)
+                {
+                    return BadRequest(new { Message = "Please select the company from the official company list." });
+                }
+                dto.CompanyName = official.Name;
 
                 user.Email = dto.Email.Trim();
             }
@@ -299,6 +442,9 @@ namespace JobBank.Api.Controllers
                     s.Id,
                     s.UserId,
                     s.RefNo,
+                    // Evaluated in memory after the query (top-level projection)
+                    RefNoIssuedOn = RefNoGenerator.IssuedOn(s.RefNo),
+                    RefNoValid = RefNoGenerator.IsValidToday(s.RefNo),
                     s.FirstName,
                     s.LastName,
                     s.NicNumber,
@@ -315,6 +461,42 @@ namespace JobBank.Api.Controllers
                 .ToList();
 
             return Ok(seekers);
+        }
+
+        // Re-issue a reference number for a returning job seeker. A reference number is valid only on
+        // its day of issue, so on a later visit the admin gives the same seeker a new one dated today.
+        [HttpPost("jobseeker/{id}/reissue-refno")]
+        public IActionResult ReissueRefNo(Guid id)
+        {
+            var seeker = _context.JobSeekerProfiles.FirstOrDefault(s => s.Id == id);
+            if (seeker == null)
+            {
+                return NotFound(new { Message = "Job seeker profile not found." });
+            }
+
+            // A hired candidate (employer Accepted them) does not get a new reference number
+            if (_context.JobApplications.Any(a => a.JobSeekerProfileId == seeker.Id && a.Status == ApplicationStatus.Accepted))
+            {
+                return BadRequest(new { Message = "This job seeker has already been hired, so a new reference number cannot be issued." });
+            }
+
+            if (RefNoGenerator.IsValidToday(seeker.RefNo))
+            {
+                return BadRequest(new { Message = $"Reference number {seeker.RefNo} was issued today and is still valid.", seeker.RefNo });
+            }
+
+            var previousRefNo = seeker.RefNo;
+            seeker.RefNo = RefNoGenerator.Generate(_context, seeker.NicNumber);
+            _context.SaveChanges();
+
+            return Ok(new
+            {
+                Message = "New reference number issued.",
+                seeker.RefNo,
+                PreviousRefNo = previousRefNo,
+                RefNoIssuedOn = RefNoGenerator.IssuedOn(seeker.RefNo),
+                RefNoValid = true
+            });
         }
 
         // Candidate pool: every job seeker not yet accepted by a company. Covers candidates never
@@ -368,9 +550,14 @@ namespace JobBank.Api.Controllers
                 return BadRequest(new { Message = "Selected job vacancy is no longer available." });
             }
 
+            if (IsVacancyFull(dto.JobPostId))
+            {
+                return BadRequest(new { Message = "All positions for this job vacancy are already filled." });
+            }
+
             if (_context.JobApplications.Any(a => a.JobSeekerProfileId == seekerId && a.Status == ApplicationStatus.Accepted))
             {
-                return BadRequest(new { Message = "This candidate has already been accepted by a company." });
+                return BadRequest(new { Message = "This candidate has already been hired by a company." });
             }
 
             if (_context.JobApplications.Any(a => a.JobSeekerProfileId == seekerId && a.JobPostId == dto.JobPostId))
@@ -496,6 +683,10 @@ namespace JobBank.Api.Controllers
                     j.JobType,
                     j.JobCategory,
                     j.SalaryRange,
+                    j.PositionsAvailable,
+                    FilledPositions = j.Applications.Count(a => a.Status == ApplicationStatus.Accepted),
+                    RemainingPositions = j.PositionsAvailable - j.Applications.Count(a => a.Status == ApplicationStatus.Accepted) > 0
+                        ? j.PositionsAvailable - j.Applications.Count(a => a.Status == ApplicationStatus.Accepted) : 0,
                     j.IsActive,
                     j.CreatedAt,
                     CompanyName = j.CompanyProfile!.CompanyName,
@@ -503,7 +694,107 @@ namespace JobBank.Api.Controllers
                 })
                 .ToList();
 
-            return Ok(jobs);
+            // Zone where each vacancy is available, looked up by company name in the common database.
+            // If that database cannot be reached, the jobs are still returned without zones.
+            var zones = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                zones = _commonDb.GetZonesForCompanies(jobs.Select(j => j.CompanyName));
+            }
+            catch (SqlException)
+            {
+            }
+
+            return Ok(jobs.Select(j => new
+            {
+                j.Id,
+                j.Title,
+                j.Location,
+                j.JobType,
+                j.JobCategory,
+                j.SalaryRange,
+                j.PositionsAvailable,
+                j.FilledPositions,
+                j.RemainingPositions,
+                j.IsActive,
+                j.CreatedAt,
+                j.CompanyName,
+                j.CompanyId,
+                Zone = zones.TryGetValue((j.CompanyName ?? string.Empty).Trim(), out var zone) ? zone : string.Empty
+            }));
+        }
+
+        public class LinkCompanyDto
+        {
+            public string CompanyName { get; set; } = string.Empty;
+        }
+
+        // Link an existing employer to its official company name (fixes names like "abc's Company"),
+        // so its vacancies show the zone. Admins may link a company that another account already uses.
+        [HttpPut("company/{profileId}/official")]
+        public IActionResult LinkOfficialCompany(Guid profileId, [FromBody] LinkCompanyDto dto)
+        {
+            var company = _context.CompanyProfiles.FirstOrDefault(c => c.Id == profileId);
+            if (company == null)
+            {
+                return NotFound(new { Message = "Company profile not found." });
+            }
+
+            OfficialCompany? official;
+            try
+            {
+                official = _commonDb.FindCompany(dto.CompanyName);
+            }
+            catch (SqlException)
+            {
+                return StatusCode(503, new { Message = "Cannot connect to the company database. Please try again later." });
+            }
+            if (official == null)
+            {
+                return BadRequest(new { Message = "Please select a company from the official company list." });
+            }
+
+            var previousName = company.CompanyName;
+            company.CompanyName = official.Name;
+            _context.SaveChanges();
+
+            return Ok(new
+            {
+                Message = $"Linked to {official.Name}.",
+                company.CompanyName,
+                PreviousName = previousName,
+                official.Zone
+            });
+        }
+
+        public class UserStatusDto
+        {
+            public bool IsActive { get; set; }
+        }
+
+        // Activate / deactivate a user without deleting their records
+        [HttpPut("user/{id}/status")]
+        public IActionResult SetUserStatus(Guid id, [FromBody] UserStatusDto dto)
+        {
+            var user = _context.Users.FirstOrDefault(u => u.Id == id);
+            if (user == null)
+            {
+                return NotFound(new { Message = "User not found." });
+            }
+
+            if (user.Role == UserRole.Admin)
+            {
+                return BadRequest(new { Message = "Cannot change the status of an Admin user." });
+            }
+
+            user.IsActive = dto.IsActive;
+            _context.SaveChanges();
+
+            return Ok(new
+            {
+                Message = dto.IsActive ? "User activated successfully." : "User deactivated successfully.",
+                user.IsActive
+            });
         }
 
         [HttpDelete("user/{id}")]

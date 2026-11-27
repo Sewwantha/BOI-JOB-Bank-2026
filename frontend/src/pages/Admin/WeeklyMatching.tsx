@@ -40,7 +40,7 @@ interface WeeklyMatchingProps {
 
 const availabilityLabels: Record<Exclude<Availability, 'Available'>, string> = {
   Assigned: 'Assigned',
-  CandidateAccepted: 'Accepted elsewhere',
+  CandidateAccepted: 'Hired elsewhere',
   VacancyClosed: 'Vacancy closed',
 };
 

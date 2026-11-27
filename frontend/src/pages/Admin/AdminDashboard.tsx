@@ -22,7 +22,7 @@ import api from '../../services/api';
 import UserRegistration from './UserRegistration';
 import CandidatePool, { type PoolCandidate } from './CandidatePool';
 import WeeklyMatching from './WeeklyMatching';
-import { type ApplicationStatus, statusBadgeClass } from '../../constants/applicationStatus';
+import { type ApplicationStatus, statusBadgeClass, statusLabel } from '../../constants/applicationStatus';
 
 interface Stats {
   totalUsers: number;
@@ -618,7 +618,7 @@ const AdminDashboard: React.FC = () => {
                             <td className="p-4">
                               {seeker.applicationStatus ? (
                                 <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${statusBadgeClass[seeker.applicationStatus]}`}>
-                                  {seeker.applicationStatus}
+                                  {statusLabel[seeker.applicationStatus] ?? seeker.applicationStatus}
                                 </span>
                               ) : (
                                 <span className="text-xs text-slate-500">Not assigned</span>

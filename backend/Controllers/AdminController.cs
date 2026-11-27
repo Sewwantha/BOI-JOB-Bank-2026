@@ -502,7 +502,7 @@ namespace JobBank.Api.Controllers
 
             if (_context.JobApplications.Any(a => a.JobSeekerProfileId == seekerId && a.Status == ApplicationStatus.Accepted))
             {
-                return BadRequest(new { Message = "This candidate has already been accepted by a company." });
+                return BadRequest(new { Message = "This candidate has already been hired by a company." });
             }
 
             if (_context.JobApplications.Any(a => a.JobSeekerProfileId == seekerId && a.JobPostId == dto.JobPostId))

@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { PlusCircle, Edit3, CheckCircle, AlertCircle, MapPin, Banknote, Users } from 'lucide-react';
+import { PlusCircle, Edit3, CheckCircle, AlertCircle, MapPin, Banknote, FileText, Upload, Users } from 'lucide-react';
 import api from '../../services/api';
 import { jobCategoriesList } from '../../constants/jobSeekerOptions';
+import BulkJobUpload from './BulkJobUpload';
 
 const PostJob: React.FC = () => {
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('editId');
 
   const navigate = useNavigate();
+  // 'single' = one-vacancy form, 'bulk' = CSV upload (not offered when editing)
+  const [mode, setMode] = useState<'single' | 'bulk'>(searchParams.get('mode') === 'bulk' ? 'bulk' : 'single');
+  const isBulk = !editId && mode === 'bulk';
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -129,10 +133,36 @@ const PostJob: React.FC = () => {
             {editId ? <Edit3 className="h-6 w-6" /> : <PlusCircle className="h-6 w-6" />}
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-100">{editId ? 'Edit Job Posting' : 'Post a New Job'}</h1>
-            <p className="text-slate-400 text-xs mt-0.5">Advertise open positions and attract top applicants</p>
+            <h1 className="text-2xl font-extrabold text-slate-100">
+              {editId ? 'Edit Job Posting' : isBulk ? 'Upload Bulk Vacancies' : 'Post a New Job'}
+            </h1>
+            <p className="text-slate-400 text-xs mt-0.5">
+              {isBulk ? 'Post many vacancies at once from a CSV file' : 'Advertise open positions and attract top applicants'}
+            </p>
           </div>
         </div>
+
+        {!editId && (
+          <div className="grid grid-cols-2 gap-2 p-1 mb-8 bg-slate-900/60 border border-slate-800 rounded-xl">
+            {([
+              { key: 'single', label: 'Single Vacancy', icon: <FileText className="h-4 w-4" /> },
+              { key: 'bulk', label: 'Bulk Upload (CSV)', icon: <Upload className="h-4 w-4" /> },
+            ] as const).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => { setMode(t.key); setMessage(null); }}
+                className={`flex items-center justify-center space-x-2 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 cursor-pointer ${
+                  mode === t.key ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {t.icon}<span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isBulk ? <BulkJobUpload /> : (<>
 
         {message && (
           <div
@@ -320,6 +350,7 @@ const PostJob: React.FC = () => {
             </button>
           </div>
         </form>
+        </>)}
       </div>
     </div>
   );

@@ -208,6 +208,76 @@ namespace JobBank.Api.Controllers
             });
         }
 
+        public const int MaxBulkJobs = 200;
+
+        // Creates many vacancies in one request (bulk CSV upload). All-or-nothing:
+        // if any row is invalid, nothing is saved and the row errors are returned.
+        [Authorize(Roles = "Employer")]
+        [HttpPost("bulk")]
+        public IActionResult CreateJobsBulk([FromBody] List<JobPostCreateDto> dtos)
+        {
+            var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+            if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out Guid userId))
+            {
+                return Unauthorized(new { Message = "Invalid user token." });
+            }
+
+            var company = _context.CompanyProfiles.FirstOrDefault(c => c.UserId == userId);
+            if (company == null)
+            {
+                return NotFound(new { Message = "Company profile not found. Please set up your company profile first." });
+            }
+
+            if (dtos == null || dtos.Count == 0)
+            {
+                return BadRequest(new { Message = "No vacancies were provided." });
+            }
+            if (dtos.Count > MaxBulkJobs)
+            {
+                return BadRequest(new { Message = $"You can upload at most {MaxBulkJobs} vacancies at a time." });
+            }
+
+            var errors = new List<string>();
+            for (int i = 0; i < dtos.Count; i++)
+            {
+                var d = dtos[i];
+                var missing = new List<string>();
+                if (string.IsNullOrWhiteSpace(d.Title)) missing.Add("Title");
+                if (string.IsNullOrWhiteSpace(d.JobCategory)) missing.Add("Job Category");
+                if (string.IsNullOrWhiteSpace(d.Location)) missing.Add("Location");
+                if (string.IsNullOrWhiteSpace(d.SalaryRange)) missing.Add("Salary Range");
+                if (string.IsNullOrWhiteSpace(d.Description)) missing.Add("Description");
+                if (string.IsNullOrWhiteSpace(d.Requirements)) missing.Add("Requirements");
+                if (!Enum.IsDefined(typeof(JobType), d.JobType)) missing.Add("valid Job Type");
+                if (missing.Count > 0) errors.Add($"Vacancy {i + 1}: missing {string.Join(", ", missing)}.");
+            }
+            if (errors.Count > 0)
+            {
+                return BadRequest(new { Message = "Some vacancies are invalid. Nothing was saved.", Errors = errors });
+            }
+
+            var now = DateTime.UtcNow;
+            var jobs = dtos.Select(d => new JobPost
+            {
+                CompanyProfileId = company.Id,
+                Title = d.Title.Trim(),
+                Description = d.Description.Trim(),
+                Requirements = d.Requirements.Trim(),
+                JobCategory = d.JobCategory.Trim(),
+                Location = d.Location.Trim(),
+                SalaryRange = d.SalaryRange.Trim(),
+                PositionsAvailable = d.PositionsAvailable > 0 ? d.PositionsAvailable : 1,
+                JobType = d.JobType,
+                IsActive = true,
+                CreatedAt = now
+            }).ToList();
+
+            _context.JobPosts.AddRange(jobs);
+            _context.SaveChanges();
+
+            return Ok(new { Message = $"{jobs.Count} vacancies posted successfully.", Count = jobs.Count });
+        }
+
         [Authorize(Roles = "Employer")]
         [HttpPut("{id}")]
         public IActionResult UpdateJob(Guid id, [FromBody] JobPostCreateDto dto)

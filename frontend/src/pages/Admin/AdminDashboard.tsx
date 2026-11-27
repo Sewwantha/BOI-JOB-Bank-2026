@@ -61,6 +61,7 @@ interface SystemJob {
   createdAt: string;
   companyName: string;
   companyId: string;
+  zone?: string;
 }
 
 interface SystemJobSeeker {

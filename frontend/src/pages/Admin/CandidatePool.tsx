@@ -28,6 +28,7 @@ export interface PoolVacancy {
   id: string;
   title: string;
   companyName: string;
+  zone?: string; // zone where the vacancy is available (from the common database)
 }
 
 interface CandidatePoolProps {
@@ -160,7 +161,7 @@ const CandidatePool: React.FC<CandidatePoolProps> = ({ candidates, vacancies, on
                           </option>
                           {vacancies.map((v) => (
                             <option key={v.id} value={v.id} className="bg-slate-950">
-                              {v.title} — {v.companyName}
+                              {v.title} — {v.zone ? `${v.zone} | ` : ''}{v.companyName}
                             </option>
                           ))}
                         </select>

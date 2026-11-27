@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -53,6 +54,57 @@ namespace JobBank.Api.Data
                 (reader["UserName"] as string)?.Trim() ?? string.Empty,
                 (reader["LocationCode"] as string)?.Trim(),
                 (reader["LocName"] as string)?.Trim());
+        }
+
+        /// <summary>
+        /// Zone name (Location.LocName) for each company name, matched to project.PRJNAME.
+        /// project -> site.FACZONECD -> Location.PhyLocCode (the reverse of GetZonesForLocation).
+        /// Companies with no matching project are left out. Keys are case-insensitive.
+        /// </summary>
+        public Dictionary<string, string> GetZonesForCompanies(IEnumerable<string> companyNames)
+        {
+            var result = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+            var names = new List<string>();
+            foreach (var n in companyNames)
+            {
+                var trimmed = (n ?? string.Empty).Trim();
+                if (trimmed.Length > 0 && !names.Contains(trimmed, System.StringComparer.OrdinalIgnoreCase))
+                {
+                    names.Add(trimmed);
+                }
+            }
+            if (names.Count == 0)
+            {
+                return result;
+            }
+
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand { Connection = conn };
+            var paramNames = new List<string>();
+            for (int i = 0; i < names.Count; i++)
+            {
+                paramNames.Add($"@n{i}");
+                cmd.Parameters.AddWithValue($"@n{i}", names[i].ToUpperInvariant());
+            }
+            cmd.CommandText = $@"
+                SELECT DISTINCT UPPER(LTRIM(RTRIM(p.PRJNAME))) AS PRJNAME, LTRIM(RTRIM(l.LocName)) AS LocName
+                FROM project p
+                JOIN site s ON s.REFNO = p.REFNO AND s.PRJTYPE = p.PRJTYPE
+                JOIN Location l ON l.PhyLocCode = s.FACZONECD
+                WHERE UPPER(LTRIM(RTRIM(p.PRJNAME))) IN ({string.Join(", ", paramNames)})
+                  AND l.LocName IS NOT NULL AND LTRIM(RTRIM(l.LocName)) <> ''
+                ORDER BY LocName";
+            conn.Open();
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var company = reader.GetString(0);
+                var zone = reader.GetString(1);
+                // A company with sites in several zones shows them all, e.g. "EPZ - Katunayake / EPZ - Biyagama"
+                result[company] = result.TryGetValue(company, out var existing) ? $"{existing} / {zone}" : zone;
+            }
+            return result;
         }
 
         /// <summary>

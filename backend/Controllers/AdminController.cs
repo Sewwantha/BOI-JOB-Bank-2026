@@ -678,7 +678,34 @@ namespace JobBank.Api.Controllers
                 })
                 .ToList();
 
-            return Ok(jobs);
+            // Zone where each vacancy is available, looked up by company name in the common database.
+            // If that database cannot be reached, the jobs are still returned without zones.
+            var zones = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                zones = _commonDb.GetZonesForCompanies(jobs.Select(j => j.CompanyName));
+            }
+            catch (SqlException)
+            {
+            }
+
+            return Ok(jobs.Select(j => new
+            {
+                j.Id,
+                j.Title,
+                j.Location,
+                j.JobType,
+                j.JobCategory,
+                j.SalaryRange,
+                j.PositionsAvailable,
+                j.FilledPositions,
+                j.RemainingPositions,
+                j.IsActive,
+                j.CreatedAt,
+                j.CompanyName,
+                j.CompanyId,
+                Zone = zones.TryGetValue((j.CompanyName ?? string.Empty).Trim(), out var zone) ? zone : string.Empty
+            }));
         }
 
         public class UserStatusDto

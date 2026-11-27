@@ -59,10 +59,10 @@ namespace JobBank.Api.Controllers
                     return BadRequest(new { Message = "NIC number is required for Job Seekers." });
                 }
 
-                var nicTrimmed = dto.NicNumber.Trim();
-                if (nicTrimmed.Length != 10)
+                var nicTrimmed = NicHelper.Normalize(dto.NicNumber);
+                if (!NicHelper.IsValid(nicTrimmed))
                 {
-                    return BadRequest(new { Message = "NIC number must be exactly 10 characters." });
+                    return BadRequest(new { Message = NicHelper.ErrorMessage });
                 }
 
                 if (_context.Users.Any(u => u.NicNumber == nicTrimmed))
@@ -157,7 +157,7 @@ namespace JobBank.Api.Controllers
             if (!string.IsNullOrWhiteSpace(dto.NicNumber))
             {
                 // Login via NIC number (Job Seekers)
-                var nicTrimmed = dto.NicNumber.Trim();
+                var nicTrimmed = NicHelper.Normalize(dto.NicNumber);
                 user = _context.Users
                     .Include(u => u.CompanyProfile)
                     .Include(u => u.JobSeekerProfile)

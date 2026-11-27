@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth, type UserSession } from '../context/AuthContext';
 import { Lock, Mail, User, Building, AlertTriangle, ArrowRight, IdCard } from 'lucide-react';
 import api from '../services/api';
+import { sanitizeNic, isValidNic, NIC_MAX_LENGTH, NIC_ERROR } from '../utils/nicValidation';
 import RegistrationSuccessModal from '../components/RegistrationSuccessModal';
 
 interface RegisterResponse {
@@ -51,8 +52,8 @@ const Register: React.FC = () => {
       return;
     }
 
-    if (role === 'JobSeeker' && email.length !== 10) {
-      setError('NIC number must be exactly 10 characters.');
+    if (role === 'JobSeeker' && !isValidNic(email)) {
+      setError(NIC_ERROR);
       return;
     }
 
@@ -159,18 +160,15 @@ const Register: React.FC = () => {
                     name="nic"
                     type="text"
                     required
-                    maxLength={10}
+                    maxLength={NIC_MAX_LENGTH}
                     value={email}
-                    onChange={(e) => {
-                      const val = e.target.value.slice(0, 10);
-                      setEmail(val);
-                    }}
+                    onChange={(e) => setEmail(sanitizeNic(e.target.value))}
                     className="block w-full pl-10 pr-3 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all duration-200"
-                    placeholder="Enter 10-character NIC"
+                    placeholder="e.g. 951480234V or 199514802345"
                   />
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  {email.length}/10 characters
+                  Old (9 digits + V/X) or new (12 digits) NIC
                 </p>
               </div>
             ) : (

@@ -4,6 +4,9 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { CheckCircle, AlertCircle, ArrowLeft, FileText } from 'lucide-react';
 import api from '../../services/api';
+import { sanitizeFullName, isValidFullName, FULL_NAME_ERROR } from '../../utils/nameValidation';
+import { isValidDob, getMinDob, getMaxDob, DOB_ERROR } from '../../utils/dobValidation';
+import { sanitizePhone, isValidPhone, PHONE_LENGTH, MOBILE_ERROR, LANDLINE_ERROR } from '../../utils/phoneValidation';
 import {
   districtsList,
   zonesList,
@@ -224,13 +227,33 @@ const SeekerProfile: React.FC = () => {
       setSaving(false);
       return;
     }
+    if (!isValidFullName(fullName)) {
+      setMessage({ type: 'error', text: FULL_NAME_ERROR });
+      setSaving(false);
+      return;
+    }
     if (!dateOfBirth) {
       setMessage({ type: 'error', text: 'Date of Birth is required.' });
       setSaving(false);
       return;
     }
+    if (!isValidDob(dateOfBirth)) {
+      setMessage({ type: 'error', text: DOB_ERROR });
+      setSaving(false);
+      return;
+    }
     if (!mobileNumber.trim()) {
       setMessage({ type: 'error', text: 'Mobile Number is required.' });
+      setSaving(false);
+      return;
+    }
+    if (!isValidPhone(mobileNumber)) {
+      setMessage({ type: 'error', text: MOBILE_ERROR });
+      setSaving(false);
+      return;
+    }
+    if (landlineNumber.trim() && !isValidPhone(landlineNumber)) {
+      setMessage({ type: 'error', text: LANDLINE_ERROR });
       setSaving(false);
       return;
     }
@@ -413,7 +436,9 @@ const SeekerProfile: React.FC = () => {
                   type="text"
                   required
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => setFullName(sanitizeFullName(e.target.value))}
+                  pattern="[A-Za-z][A-Za-z.]*( [A-Za-z.]+)*"
+                  title="Alphabetic characters, dots and spaces only"
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 placeholder-slate-655 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-200"
                   placeholder="Enter your full name"
                 />
@@ -429,6 +454,8 @@ const SeekerProfile: React.FC = () => {
                   required
                   value={dateOfBirth}
                   onChange={(e) => setDateOfBirth(e.target.value)}
+                  min={getMinDob()}
+                  max={getMaxDob()}
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-200"
                 />
               </div>
@@ -454,9 +481,11 @@ const SeekerProfile: React.FC = () => {
                 </label>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={PHONE_LENGTH}
                   required
                   value={mobileNumber}
-                  onChange={(e) => setMobileNumber(e.target.value)}
+                  onChange={(e) => setMobileNumber(sanitizePhone(e.target.value))}
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 placeholder-slate-655 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-200"
                   placeholder="e.g. 0771234567"
                 />
@@ -469,8 +498,10 @@ const SeekerProfile: React.FC = () => {
                 </label>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={PHONE_LENGTH}
                   value={landlineNumber}
-                  onChange={(e) => setLandlineNumber(e.target.value)}
+                  onChange={(e) => setLandlineNumber(sanitizePhone(e.target.value))}
                   className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 placeholder-slate-655 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm transition-all duration-200"
                   placeholder="e.g. 0112345678"
                 />

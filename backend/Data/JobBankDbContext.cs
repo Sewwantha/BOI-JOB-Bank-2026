@@ -26,10 +26,10 @@ namespace JobBank.Api.Data
                 .HasIndex(u => u.Email)
                 .IsUnique();
 
-            // NicNumber: max 10 chars, unique (filtered to non-empty so employers don't conflict)
+            // NicNumber: old (9 digits + V/X, 10 chars) or new (12 digits) format, unique (filtered to non-empty so employers don't conflict)
             modelBuilder.Entity<User>()
                 .Property(u => u.NicNumber)
-                .HasMaxLength(10);
+                .HasMaxLength(12);
 
             modelBuilder.Entity<User>()
                 .HasIndex(u => u.NicNumber)

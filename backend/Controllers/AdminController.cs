@@ -1,5 +1,9 @@
+using System.Collections.Generic;
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
@@ -20,14 +24,115 @@ namespace JobBank.Api.Controllers
     {
         private readonly JobBankDbContext _context;
         private readonly CommonDbService _commonDb;
+        private readonly IWebHostEnvironment _env;
+        private readonly IConfiguration _config;
 
-        public AdminController(JobBankDbContext context, CommonDbService commonDb)
+        public AdminController(JobBankDbContext context, CommonDbService commonDb, IWebHostEnvironment env, IConfiguration config)
         {
             _context = context;
             _commonDb = commonDb;
+            _env = env;
+            _config = config;
         }
 
-        // Available Job Locations (Zone) for the logged-in admin's location (project names from the common database)
+        private static readonly string[] NicScanExtensions = { ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp", ".pdf" };
+        private const long MaxNicScanBytes = 10 * 1024 * 1024;
+
+        // Reads a scanned NIC (front, and optionally back) with OCR (parse_nic.py) and returns the
+        // fields found, so the registration form can be pre-filled. Nothing is saved.
+        [HttpPost("scan-nic")]
+        [RequestSizeLimit(2 * MaxNicScanBytes + 1024 * 1024)]
+        public async Task<IActionResult> ScanNic(IFormFile? front, IFormFile? back)
+        {
+            if (front == null || front.Length == 0)
+            {
+                return BadRequest(new { Message = "Please choose the scanned NIC file." });
+            }
+
+            var files = back != null && back.Length > 0 ? new[] { front, back } : new[] { front };
+            foreach (var f in files)
+            {
+                var ext = Path.GetExtension(f.FileName).ToLowerInvariant();
+                if (!NicScanExtensions.Contains(ext))
+                {
+                    return BadRequest(new { Message = "NIC scans must be an image (JPG, PNG, BMP, TIFF, WEBP) or a PDF." });
+                }
+                if (f.Length > MaxNicScanBytes)
+                {
+                    return BadRequest(new { Message = "Each NIC scan must be 10 MB or smaller." });
+                }
+            }
+
+            var tempPaths = new List<string>();
+            try
+            {
+                foreach (var f in files)
+                {
+                    // Keep the extension: parse_nic.py picks the reader based on it
+                    var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + Path.GetExtension(f.FileName).ToLowerInvariant());
+                    await using (var stream = new FileStream(path, FileMode.Create))
+                    {
+                        await f.CopyToAsync(stream);
+                    }
+                    tempPaths.Add(path);
+                }
+
+                var psi = new ProcessStartInfo
+                {
+                    // Under IIS the app pool may not have python on its PATH; set Python:Path to the full python.exe path
+                    FileName = _config["Python:Path"] ?? "python",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                psi.ArgumentList.Add(Path.Combine(_env.ContentRootPath, "parse_nic.py"));
+                foreach (var path in tempPaths) psi.ArgumentList.Add(path);
+                psi.Environment["PYTHONIOENCODING"] = "utf-8";
+                psi.StandardOutputEncoding = System.Text.Encoding.UTF8;
+
+                using var process = Process.Start(psi);
+                if (process == null)
+                {
+                    return StatusCode(500, new { Message = "Failed to start the NIC scan reader." });
+                }
+
+                var outputTask = process.StandardOutput.ReadToEndAsync();
+                var errorTask = process.StandardError.ReadToEndAsync();
+                using var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(90));
+                try
+                {
+                    await process.WaitForExitAsync(timeout.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
+                    return StatusCode(504, new { Message = "Reading the NIC scan took too long. Please try a clearer or smaller image." });
+                }
+
+                var output = await outputTask;
+                var error = await errorTask;
+                if (process.ExitCode != 0)
+                {
+                    return StatusCode(500, new { Message = "Could not read the NIC scan.", Details = error });
+                }
+
+                return Content(output, "application/json");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = "An error occurred while reading the NIC scan.", Details = ex.Message });
+            }
+            finally
+            {
+                foreach (var path in tempPaths)
+                {
+                    try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); } catch { /* ignore */ }
+                }
+            }
+        }
+
+        // Preferred Job Locations (Zone) for the logged-in admin's location (project names from the common database)
         [HttpGet("zones")]
         public IActionResult GetZones()
         {
@@ -161,10 +266,10 @@ namespace JobBank.Api.Controllers
 
             if (dto.Role == UserRole.JobSeeker)
             {
-                var nicTrimmed = (dto.NicNumber ?? string.Empty).Trim();
-                if (nicTrimmed.Length != 10)
+                var nicTrimmed = NicHelper.Normalize(dto.NicNumber);
+                if (!NicHelper.IsValid(nicTrimmed))
                 {
-                    return BadRequest(new { Message = "NIC number must be exactly 10 characters." });
+                    return BadRequest(new { Message = NicHelper.ErrorMessage });
                 }
 
                 if (_context.Users.Any(u => u.NicNumber == nicTrimmed))

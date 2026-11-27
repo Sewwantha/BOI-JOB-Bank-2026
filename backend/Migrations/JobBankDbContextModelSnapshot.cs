@@ -328,8 +328,8 @@ namespace JobBank.Api.Migrations
 
                     b.Property<string>("NicNumber")
                         .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()

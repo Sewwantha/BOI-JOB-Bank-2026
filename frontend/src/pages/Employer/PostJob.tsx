@@ -19,7 +19,8 @@ const PostJob: React.FC = () => {
   const [requirements, setRequirements] = useState('');
   const [location, setLocation] = useState('');
   const [salaryRange, setSalaryRange] = useState('');
-  const [jobType, setJobType] = useState<number>(0); // Enums: FullTime=0, Contract=2, Internship=4
+  // Enums: FullTime=0, Contract=2, Internship=4. Empty until the employer picks one (mandatory).
+  const [jobType, setJobType] = useState<number | ''>('');
   // Number of openings for this position (kept as string so the field can be cleared while typing)
   const [positionsAvailable, setPositionsAvailable] = useState<string>('1');
   // Same list job seekers choose from, so the weekly matching can compare them directly
@@ -72,6 +73,15 @@ const PostJob: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const missing: string[] = [];
+    if (!title.trim()) missing.push('Job Title');
+    if (jobType === '') missing.push('Job Type');
+    if (!salaryRange.trim()) missing.push('Salary Range');
+    if (!location.trim()) missing.push('Location');
+    if (missing.length) {
+      setMessage({ type: 'error', text: `Please fill in the mandatory field(s): ${missing.join(', ')}.` });
+      return;
+    }
     if (!category || (category === 'Other' && !otherCategory.trim())) {
       setMessage({ type: 'error', text: 'Please select a job category.' });
       return;
@@ -85,12 +95,12 @@ const PostJob: React.FC = () => {
     setMessage(null);
 
     const payload = {
-      title,
+      title: title.trim(),
       description,
       requirements,
       jobCategory: category === 'Other' ? `Other: ${otherCategory.trim()}` : category,
-      location,
-      salaryRange,
+      location: location.trim(),
+      salaryRange: salaryRange.trim(),
       jobType,
       positionsAvailable: positions,
     };
@@ -184,7 +194,9 @@ const PostJob: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Job Title */}
           <div>
-            <label className="text-xs font-semibold text-slate-400 block mb-1">Job Title</label>
+            <label className="text-xs font-semibold text-slate-400 block mb-1">
+              Job Title <span className="text-rose-500 font-bold">*</span>
+            </label>
             <input
               type="text"
               required
@@ -234,19 +246,25 @@ const PostJob: React.FC = () => {
           {/* Job Type & Salary Range */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="text-xs font-semibold text-slate-400 block mb-1">Job Type</label>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">
+                Job Type <span className="text-rose-500 font-bold">*</span>
+              </label>
               <select
+                required
                 value={jobType}
-                onChange={(e) => setJobType(parseInt(e.target.value))}
+                onChange={(e) => setJobType(e.target.value === '' ? '' : parseInt(e.target.value))}
                 className="w-full px-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm cursor-pointer"
               >
+                <option value="" disabled>Select Job Type</option>
                 <option value={0}>Full Time</option>
                 <option value={2}>Contract</option>
                 <option value={4}>Internship</option>
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-400 block mb-1">Salary Range</label>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">
+                Salary Range <span className="text-rose-500 font-bold">*</span>
+              </label>
               <div className="relative">
                 <Banknote className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
                 <input

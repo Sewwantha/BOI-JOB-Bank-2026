@@ -167,9 +167,10 @@ namespace JobBank.Api.Controllers
                 return NotFound(new { Message = "Company profile not found. Please set up your company profile first." });
             }
 
-            if (string.IsNullOrWhiteSpace(dto.JobCategory))
+            var validationError = ValidateMandatoryFields(dto);
+            if (validationError != null)
             {
-                return BadRequest(new { Message = "Job category is required." });
+                return BadRequest(new { Message = validationError });
             }
 
             var job = new JobPost
@@ -206,6 +207,21 @@ namespace JobBank.Api.Controllers
                 IsActive = job.IsActive,
                 CreatedAt = job.CreatedAt
             });
+        }
+
+        // Job Title, Job Category, Job Type, Salary Range and Location are mandatory for a job post.
+        private static string? ValidateMandatoryFields(JobPostCreateDto dto)
+        {
+            var missing = new List<string>();
+            if (string.IsNullOrWhiteSpace(dto.Title)) missing.Add("Job Title");
+            if (string.IsNullOrWhiteSpace(dto.JobCategory)) missing.Add("Job Category");
+            if (!Enum.IsDefined(typeof(JobType), dto.JobType)) missing.Add("Job Type");
+            if (string.IsNullOrWhiteSpace(dto.SalaryRange)) missing.Add("Salary Range");
+            if (string.IsNullOrWhiteSpace(dto.Location)) missing.Add("Location");
+
+            return missing.Count > 0
+                ? $"Please fill in the mandatory field(s): {string.Join(", ", missing)}."
+                : null;
         }
 
         public const int MaxBulkJobs = 200;
@@ -300,11 +316,10 @@ namespace JobBank.Api.Controllers
                 return NotFound(new { Message = "Job post not found or unauthorized to edit." });
             }
 
-            job.Title = dto.Title.Trim();
-            job.Description = dto.Description.Trim();
-            if (string.IsNullOrWhiteSpace(dto.JobCategory))
+            var validationError = ValidateMandatoryFields(dto);
+            if (validationError != null)
             {
-                return BadRequest(new { Message = "Job category is required." });
+                return BadRequest(new { Message = validationError });
             }
 
             // Positions cannot go below the number of applicants already selected
@@ -314,6 +329,8 @@ namespace JobBank.Api.Controllers
                 return BadRequest(new { Message = $"{filledPositions} applicant(s) are already selected for this job, so available positions cannot be less than {filledPositions}." });
             }
 
+            job.Title = dto.Title.Trim();
+            job.Description = dto.Description.Trim();
             job.Requirements = dto.Requirements.Trim();
             job.JobCategory = dto.JobCategory.Trim();
             job.Location = dto.Location.Trim();

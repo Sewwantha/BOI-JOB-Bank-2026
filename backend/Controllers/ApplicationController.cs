@@ -77,39 +77,55 @@ namespace JobBank.Api.Controllers
                 return Unauthorized(new { Message = "Invalid user token." });
             }
 
-            var seeker = _context.JobSeekerProfiles.FirstOrDefault(s => s.UserId == userId);
+            // Include User: the email is read below (previously null here, which made this endpoint fail)
+            var seeker = _context.JobSeekerProfiles
+                .Include(s => s.User)
+                .FirstOrDefault(s => s.UserId == userId);
             if (seeker == null)
             {
                 return NotFound(new { Message = "Job seeker profile not found." });
             }
 
-            var apps = _context.JobApplications
-                .Include(a => a.JobPost)
-                .ThenInclude(j => j!.CompanyProfile)
+            // Load the application rows first, then add the seeker's own details in memory,
+            // so no navigation on the local 'seeker' object is evaluated inside the SQL query.
+            var rows = _context.JobApplications
                 .Where(a => a.JobSeekerProfileId == seeker.Id)
                 .OrderByDescending(a => a.AppliedAt)
-                .Select(a => new JobApplicationDto
+                .Select(a => new
                 {
-                    Id = a.Id,
-                    JobPostId = a.JobPostId,
-                    JobTitle = a.JobPost!.Title,
-                    CompanyName = a.JobPost!.CompanyProfile!.CompanyName,
-                    JobSeekerProfileId = a.JobSeekerProfileId,
-                    SeekerName = $"{seeker.FirstName} {seeker.LastName}",
-                    SeekerEmail = seeker.User!.Email,
-                    ResumeUrl = a.ResumeUrl,
-                    CoverLetter = a.CoverLetter,
-                    Status = a.Status,
-                    RejectionRemark = a.RejectionRemark,
-                    AppliedAt = a.AppliedAt,
-                    SeekerPhone = seeker.MobileNumber,
-                    SeekerAddress = $"{seeker.Address}, {seeker.District}",
-                    SeekerSkills = seeker.Skills,
-                    SeekerEducation = seeker.EducationalQualifications,
-                    SeekerVocationalTraining = seeker.VocationalTraining,
-                    SeekerExperience = seeker.Experience
+                    a.Id,
+                    a.JobPostId,
+                    JobTitle = a.JobPost != null ? a.JobPost.Title : string.Empty,
+                    CompanyName = a.JobPost != null && a.JobPost.CompanyProfile != null ? a.JobPost.CompanyProfile.CompanyName : string.Empty,
+                    a.ResumeUrl,
+                    a.CoverLetter,
+                    a.Status,
+                    a.RejectionRemark,
+                    a.AppliedAt
                 })
                 .ToList();
+
+            var apps = rows.Select(a => new JobApplicationDto
+            {
+                Id = a.Id,
+                JobPostId = a.JobPostId,
+                JobTitle = a.JobTitle,
+                CompanyName = a.CompanyName,
+                JobSeekerProfileId = seeker.Id,
+                SeekerName = $"{seeker.FirstName} {seeker.LastName}",
+                SeekerEmail = seeker.User?.Email ?? string.Empty,
+                ResumeUrl = a.ResumeUrl,
+                CoverLetter = a.CoverLetter,
+                Status = a.Status,
+                RejectionRemark = a.RejectionRemark,
+                AppliedAt = a.AppliedAt,
+                SeekerPhone = seeker.MobileNumber,
+                SeekerAddress = $"{seeker.Address}, {seeker.District}",
+                SeekerSkills = seeker.Skills,
+                SeekerEducation = seeker.EducationalQualifications,
+                SeekerVocationalTraining = seeker.VocationalTraining,
+                SeekerExperience = seeker.Experience
+            }).ToList();
 
             return Ok(apps);
         }

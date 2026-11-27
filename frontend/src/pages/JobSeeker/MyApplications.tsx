@@ -69,6 +69,8 @@ const MyApplications: React.FC = () => {
   const [parsedData, setParsedData] = useState<ParsedCvData | null>(null);
   const [rawJson, setRawJson] = useState<string>('');
   const [showJson, setShowJson] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'All' | Application['status']>('All');
 
   /* ─── CV Upload Handler ─── */
   const handleCvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,8 +124,11 @@ const MyApplications: React.FC = () => {
       try {
         const res = await api.get('/application/seeker');
         setApplications(res.data);
-      } catch (err) {
+        setLoadError(null);
+      } catch (err: unknown) {
         console.error('Error fetching seeker applications', err);
+        const error = err as { response?: { data?: { message?: string } } };
+        setLoadError(error.response?.data?.message || 'Could not load your applications. Please refresh the page or try again later.');
       } finally {
         setLoading(false);
       }
@@ -141,6 +146,27 @@ const MyApplications: React.FC = () => {
       default: return 'bg-slate-500/10 border-slate-500/20 text-slate-400';
     }
   };
+
+  // What the seeker sees for each status ("Accepted" by the company = selected for the vacancy)
+  const STATUS_INFO: Record<Application['status'], { label: string; note: string }> = {
+    Applied: { label: 'Applied', note: 'Your application has been sent to the company.' },
+    Reviewing: { label: 'Under Review', note: 'The company is reviewing your application.' },
+    Shortlisted: { label: 'Shortlisted', note: 'You have been shortlisted. The company may contact you for the next step.' },
+    Accepted: { label: 'Selected', note: 'Congratulations! The company has selected you for this vacancy.' },
+    Rejected: { label: 'Rejected', note: 'The company did not select you for this vacancy.' },
+  };
+
+  const countOf = (s: Application['status']) => applications.filter((a) => a.status === s).length;
+  const SUMMARY: { key: 'All' | Application['status']; label: string; count: number; style: string }[] = [
+    { key: 'All', label: 'Total Applied', count: applications.length, style: 'text-slate-200 border-slate-700' },
+    { key: 'Shortlisted', label: 'Shortlisted', count: countOf('Shortlisted'), style: 'text-purple-400 border-purple-500/30' },
+    { key: 'Accepted', label: 'Selected', count: countOf('Accepted'), style: 'text-emerald-400 border-emerald-500/30' },
+    { key: 'Rejected', label: 'Rejected', count: countOf('Rejected'), style: 'text-rose-400 border-rose-500/30' },
+  ];
+
+  const filteredApplications = statusFilter === 'All'
+    ? applications
+    : applications.filter((a) => a.status === statusFilter);
 
   const shortlisted = applications.filter((a) => a.status === 'Shortlisted');
 
@@ -397,13 +423,37 @@ const MyApplications: React.FC = () => {
       {/* ══════════════════════════════════════════════════════════════ */}
       <div>
         <h2 className="text-lg font-extrabold text-slate-100 flex items-center space-x-2 mb-4">
-          <FileText className="h-5 w-5 text-purple-400" /><span>All Applications</span>
+          <FileText className="h-5 w-5 text-purple-400" /><span>Application Status</span>
           <span className="ml-2 px-2.5 py-0.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-full text-xs font-bold">{applications.length}</span>
         </h2>
+
+        {/* Status summary: click a box to show only those applications */}
+        {!loading && !loadError && applications.length > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            {SUMMARY.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setStatusFilter(s.key)}
+                className={`glass p-4 rounded-2xl border text-left transition-all cursor-pointer ${s.style} ${
+                  statusFilter === s.key ? 'ring-2 ring-purple-500/40' : 'opacity-80 hover:opacity-100'
+                }`}
+              >
+                <span className="block text-2xl font-extrabold">{s.count}</span>
+                <span className="block text-xs font-semibold text-slate-400 mt-1">{s.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex-grow flex justify-center items-center py-24">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500"></div>
+          </div>
+        ) : loadError ? (
+          <div className="p-4 rounded-xl text-sm flex items-center space-x-2.5 border bg-rose-500/10 border-rose-500/20 text-rose-400">
+            <AlertCircle className="h-5 w-5 shrink-0 text-rose-500" />
+            <span className="font-medium">{loadError}</span>
           </div>
         ) : applications.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl border border-dashed border-slate-800">
@@ -411,20 +461,29 @@ const MyApplications: React.FC = () => {
             <h3 className="text-xl font-bold text-slate-300">No applications yet</h3>
             <p className="text-slate-500 mt-2">Go to the search dashboard and apply for active positions!</p>
           </div>
+        ) : filteredApplications.length === 0 ? (
+          <div className="text-center py-12 glass rounded-2xl border border-dashed border-slate-800">
+            <p className="text-slate-400 text-sm">No applications with this status.</p>
+          </div>
         ) : (
           <div className="space-y-4">
-            {applications.map((app) => (
+            {filteredApplications.map((app) => (
               <div key={app.id} className="glass p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between md:items-center gap-4">
                 <div className="space-y-2 flex-grow">
                   <div className="flex items-center space-x-2">
-                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold border ${getStatusStyle(app.status)}`}>{app.status}</span>
-                    <span className="text-xs text-slate-500 flex items-center space-x-1"><Calendar className="h-3 w-3" /><span>{new Date(app.appliedAt).toLocaleDateString()}</span></span>
+                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold border ${getStatusStyle(app.status)}`}>
+                      {STATUS_INFO[app.status]?.label ?? app.status}
+                    </span>
+                    <span className="text-xs text-slate-500 flex items-center space-x-1"><Calendar className="h-3 w-3" /><span>Applied {new Date(app.appliedAt).toLocaleDateString()}</span></span>
                   </div>
                   <h3 className="text-lg font-bold text-slate-100">{app.jobTitle}</h3>
                   <div className="flex items-center space-x-1.5 text-sm font-semibold text-purple-400">
                     <Building className="h-4 w-4 text-purple-500" /><span>{app.companyName}</span>
                   </div>
                   {app.coverLetter && <p className="text-slate-400 text-xs italic line-clamp-1 mt-1">"{app.coverLetter}"</p>}
+                  {STATUS_INFO[app.status] && (
+                    <p className="text-xs text-slate-400 mt-1">{STATUS_INFO[app.status].note}</p>
+                  )}
                   {app.status === 'Rejected' && app.rejectionRemark && (
                     <p className="text-xs text-rose-300 bg-rose-500/5 border border-rose-500/20 rounded-lg px-3 py-2 mt-2">
                       <span className="font-bold text-rose-400">Company remark: </span>{app.rejectionRemark}

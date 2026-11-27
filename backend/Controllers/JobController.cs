@@ -66,6 +66,8 @@ namespace JobBank.Api.Controllers
                     JobCategory = j.JobCategory,
                     Location = j.Location,
                     SalaryRange = j.SalaryRange,
+                    PositionsAvailable = j.PositionsAvailable,
+                    FilledPositions = j.Applications.Count(a => a.Status == ApplicationStatus.Accepted),
                     JobType = j.JobType,
                     IsActive = j.IsActive,
                     CreatedAt = j.CreatedAt
@@ -99,7 +101,9 @@ namespace JobBank.Api.Controllers
                 JobCategory = j.JobCategory,
                 Location = j.Location,
                 SalaryRange = j.SalaryRange,
-                JobType = j.JobType,
+                PositionsAvailable = j.PositionsAvailable,
+                FilledPositions = _context.JobApplications.Count(a => a.JobPostId == j.Id && a.Status == ApplicationStatus.Accepted),
+                    JobType = j.JobType,
                 IsActive = j.IsActive,
                 CreatedAt = j.CreatedAt
             });
@@ -136,6 +140,8 @@ namespace JobBank.Api.Controllers
                     JobCategory = j.JobCategory,
                     Location = j.Location,
                     SalaryRange = j.SalaryRange,
+                    PositionsAvailable = j.PositionsAvailable,
+                    FilledPositions = j.Applications.Count(a => a.Status == ApplicationStatus.Accepted),
                     JobType = j.JobType,
                     IsActive = j.IsActive,
                     CreatedAt = j.CreatedAt
@@ -175,6 +181,7 @@ namespace JobBank.Api.Controllers
                 JobCategory = dto.JobCategory.Trim(),
                 Location = dto.Location.Trim(),
                 SalaryRange = dto.SalaryRange.Trim(),
+                PositionsAvailable = dto.PositionsAvailable > 0 ? dto.PositionsAvailable : 1,
                 JobType = dto.JobType,
                 IsActive = true
             };
@@ -194,6 +201,7 @@ namespace JobBank.Api.Controllers
                 JobCategory = job.JobCategory,
                 Location = job.Location,
                 SalaryRange = job.SalaryRange,
+                PositionsAvailable = job.PositionsAvailable,
                 JobType = job.JobType,
                 IsActive = job.IsActive,
                 CreatedAt = job.CreatedAt
@@ -229,10 +237,18 @@ namespace JobBank.Api.Controllers
                 return BadRequest(new { Message = "Job category is required." });
             }
 
+            // Positions cannot go below the number of applicants already selected
+            var filledPositions = _context.JobApplications.Count(a => a.JobPostId == job.Id && a.Status == ApplicationStatus.Accepted);
+            if (dto.PositionsAvailable < filledPositions)
+            {
+                return BadRequest(new { Message = $"{filledPositions} applicant(s) are already selected for this job, so available positions cannot be less than {filledPositions}." });
+            }
+
             job.Requirements = dto.Requirements.Trim();
             job.JobCategory = dto.JobCategory.Trim();
             job.Location = dto.Location.Trim();
             job.SalaryRange = dto.SalaryRange.Trim();
+            job.PositionsAvailable = dto.PositionsAvailable > 0 ? dto.PositionsAvailable : 1;
             job.JobType = dto.JobType;
 
             _context.SaveChanges();
@@ -249,6 +265,8 @@ namespace JobBank.Api.Controllers
                 JobCategory = job.JobCategory,
                 Location = job.Location,
                 SalaryRange = job.SalaryRange,
+                PositionsAvailable = job.PositionsAvailable,
+                FilledPositions = _context.JobApplications.Count(a => a.JobPostId == job.Id && a.Status == ApplicationStatus.Accepted),
                 JobType = job.JobType,
                 IsActive = job.IsActive,
                 CreatedAt = job.CreatedAt

@@ -164,6 +164,14 @@ namespace JobBank.Api.Controllers
             }
         }
 
+        // A vacancy is full when the employer has selected (Accepted) as many applicants as it has positions
+        private bool IsVacancyFull(Guid jobPostId)
+        {
+            var total = _context.JobPosts.Where(j => j.Id == jobPostId).Select(j => j.PositionsAvailable).FirstOrDefault();
+            var filled = _context.JobApplications.Count(a => a.JobPostId == jobPostId && a.Status == ApplicationStatus.Accepted);
+            return filled >= total;
+        }
+
         // Active job vacancies of the company selected as the preferred zone (matched by company name)
         [HttpGet("company-vacancies")]
         public IActionResult GetCompanyVacancies([FromQuery] string companyName)
@@ -177,6 +185,8 @@ namespace JobBank.Api.Controllers
             var vacancies = _context.JobPosts
                 .Include(j => j.CompanyProfile)
                 .Where(j => j.IsActive && j.CompanyProfile != null && j.CompanyProfile.CompanyName.Trim().ToUpper() == nameNormalized)
+                // Only vacancies that still have open positions can be assigned
+                .Where(j => j.Applications.Count(a => a.Status == ApplicationStatus.Accepted) < j.PositionsAvailable)
                 .OrderByDescending(j => j.CreatedAt)
                 .Select(j => new JobPostDto
                 {
@@ -190,6 +200,8 @@ namespace JobBank.Api.Controllers
                     JobCategory = j.JobCategory,
                     Location = j.Location,
                     SalaryRange = j.SalaryRange,
+                    PositionsAvailable = j.PositionsAvailable,
+                    FilledPositions = j.Applications.Count(a => a.Status == ApplicationStatus.Accepted),
                     JobType = j.JobType,
                     IsActive = j.IsActive,
                     CreatedAt = j.CreatedAt
@@ -290,6 +302,11 @@ namespace JobBank.Api.Controllers
                 if (dto.JobPostId.HasValue && !_context.JobPosts.Any(j => j.Id == dto.JobPostId && j.IsActive))
                 {
                     return BadRequest(new { Message = "Selected job vacancy is no longer available." });
+                }
+
+                if (dto.JobPostId.HasValue && IsVacancyFull(dto.JobPostId.Value))
+                {
+                    return BadRequest(new { Message = "All positions for the selected job vacancy are already filled." });
                 }
 
                 user.NicNumber = nicTrimmed;
@@ -473,6 +490,11 @@ namespace JobBank.Api.Controllers
                 return BadRequest(new { Message = "Selected job vacancy is no longer available." });
             }
 
+            if (IsVacancyFull(dto.JobPostId))
+            {
+                return BadRequest(new { Message = "All positions for this job vacancy are already filled." });
+            }
+
             if (_context.JobApplications.Any(a => a.JobSeekerProfileId == seekerId && a.Status == ApplicationStatus.Accepted))
             {
                 return BadRequest(new { Message = "This candidate has already been accepted by a company." });
@@ -601,6 +623,10 @@ namespace JobBank.Api.Controllers
                     j.JobType,
                     j.JobCategory,
                     j.SalaryRange,
+                    j.PositionsAvailable,
+                    FilledPositions = j.Applications.Count(a => a.Status == ApplicationStatus.Accepted),
+                    RemainingPositions = j.PositionsAvailable - j.Applications.Count(a => a.Status == ApplicationStatus.Accepted) > 0
+                        ? j.PositionsAvailable - j.Applications.Count(a => a.Status == ApplicationStatus.Accepted) : 0,
                     j.IsActive,
                     j.CreatedAt,
                     CompanyName = j.CompanyProfile!.CompanyName,

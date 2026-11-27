@@ -246,6 +246,17 @@ namespace JobBank.Api.Controllers
                 return BadRequest(new { Message = "A remark is required when rejecting an applicant." });
             }
 
+            // Selecting (Accepting) an applicant fills one of the vacancy's positions
+            if (dto.Status == ApplicationStatus.Accepted && application.Status != ApplicationStatus.Accepted)
+            {
+                var filled = _context.JobApplications.Count(a => a.JobPostId == application.JobPostId && a.Status == ApplicationStatus.Accepted);
+                var total = application.JobPost!.PositionsAvailable;
+                if (filled >= total)
+                {
+                    return BadRequest(new { Message = $"All {total} position(s) for this vacancy are already filled. Increase the available positions in the job post to select more applicants." });
+                }
+            }
+
             application.Status = dto.Status;
             application.RejectionRemark = dto.Status == ApplicationStatus.Rejected ? remark : string.Empty;
             _context.SaveChanges();

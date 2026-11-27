@@ -26,6 +26,8 @@ interface Vacancy {
   location: string;
   salaryRange: string;
   jobType: string;
+  positionsAvailable?: number;
+  remainingPositions?: number;
 }
 
 const jobTypeLabels: Record<string, string> = {
@@ -485,6 +487,11 @@ const UserRegistration: React.FC<UserRegistrationProps> = ({ onRegistered }) => 
                               <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20">
                                 {jobTypeLabels[job.jobType] ?? job.jobType}
                               </span>
+                              {job.positionsAvailable != null && (
+                                <span className="inline-block mt-1 ml-1.5 px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/20">
+                                  {job.remainingPositions ?? job.positionsAvailable} of {job.positionsAvailable} positions open
+                                </span>
+                              )}
                             </div>
                           </button>
                           );

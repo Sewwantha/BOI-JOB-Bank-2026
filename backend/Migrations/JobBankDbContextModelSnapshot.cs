@@ -128,6 +128,9 @@ namespace JobBank.Api.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("PositionsAvailable")
+                        .HasColumnType("int");
+
                     b.Property<string>("Requirements")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");

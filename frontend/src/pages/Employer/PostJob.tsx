@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { PlusCircle, Edit3, CheckCircle, AlertCircle, MapPin, Banknote } from 'lucide-react';
+import { PlusCircle, Edit3, CheckCircle, AlertCircle, MapPin, Banknote, Users } from 'lucide-react';
 import api from '../../services/api';
 import { jobCategoriesList } from '../../constants/jobSeekerOptions';
 
@@ -16,6 +16,8 @@ const PostJob: React.FC = () => {
   const [location, setLocation] = useState('');
   const [salaryRange, setSalaryRange] = useState('');
   const [jobType, setJobType] = useState<number>(0); // Enums: FullTime=0, Contract=2, Internship=4
+  // Number of openings for this position (kept as string so the field can be cleared while typing)
+  const [positionsAvailable, setPositionsAvailable] = useState<string>('1');
   // Same list job seekers choose from, so the weekly matching can compare them directly
   const [category, setCategory] = useState('');
   const [otherCategory, setOtherCategory] = useState('');
@@ -36,6 +38,7 @@ const PostJob: React.FC = () => {
           setRequirements(res.data.requirements);
           setLocation(res.data.location);
           setSalaryRange(res.data.salaryRange);
+          setPositionsAvailable(String(res.data.positionsAvailable ?? 1));
 
           // Custom categories are stored as "Other: ..."
           const savedCategory: string = res.data.jobCategory || '';
@@ -69,6 +72,11 @@ const PostJob: React.FC = () => {
       setMessage({ type: 'error', text: 'Please select a job category.' });
       return;
     }
+    const positions = parseInt(positionsAvailable, 10);
+    if (!Number.isInteger(positions) || positions < 1) {
+      setMessage({ type: 'error', text: 'Available positions must be a whole number of at least 1.' });
+      return;
+    }
     setSaving(true);
     setMessage(null);
 
@@ -80,6 +88,7 @@ const PostJob: React.FC = () => {
       location,
       salaryRange,
       jobType,
+      positionsAvailable: positions,
     };
 
     try {
@@ -222,19 +231,42 @@ const PostJob: React.FC = () => {
             </div>
           </div>
 
-          {/* Location */}
-          <div>
-            <label className="text-xs font-semibold text-slate-400 block mb-1">Location</label>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
-              <input
-                type="text"
-                required
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm"
-                placeholder="e.g. Redmond, WA or Remote"
-              />
+          {/* Location & Available Positions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">
+                Location <span className="text-rose-500 font-bold">*</span>
+              </label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
+                <input
+                  type="text"
+                  required
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm"
+                  placeholder="e.g. Redmond, WA or Remote"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">
+                Available Positions <span className="text-rose-500 font-bold">*</span>
+              </label>
+              <div className="relative">
+                <Users className="absolute left-3 top-3 h-5 w-5 text-slate-500" />
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  step={1}
+                  value={positionsAvailable}
+                  onChange={(e) => setPositionsAvailable(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border border-slate-700 bg-slate-900/50 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30 text-sm"
+                  placeholder="e.g. 5"
+                />
+              </div>
+              <p className="mt-1 text-xs text-slate-500">How many people you want to hire for this position</p>
             </div>
           </div>
 

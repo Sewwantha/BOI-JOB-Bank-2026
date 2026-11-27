@@ -46,6 +46,9 @@ interface SystemJob {
   jobType: string;
   jobCategory: string;
   salaryRange: string;
+  positionsAvailable: number;
+  filledPositions?: number;
+  remainingPositions?: number;
   isActive: boolean;
   createdAt: string;
   companyName: string;
@@ -589,7 +592,7 @@ const AdminDashboard: React.FC = () => {
           {activeTab === 'pool' && (
             <CandidatePool
               candidates={pool}
-              vacancies={jobs.filter((j) => j.isActive)}
+              vacancies={jobs.filter((j) => j.isActive && (j.remainingPositions ?? 1) > 0)}
               onAssigned={refreshUsersAndStats}
             />
           )}

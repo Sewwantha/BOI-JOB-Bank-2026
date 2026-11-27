@@ -10,6 +10,7 @@ namespace JobBank.Api.DTOs.Job
         public string JobCategory { get; set; } = string.Empty;
         public string Location { get; set; } = string.Empty;
         public string SalaryRange { get; set; } = string.Empty;
+        public int PositionsAvailable { get; set; } = 1;
         public JobType JobType { get; set; }
     }
 }
